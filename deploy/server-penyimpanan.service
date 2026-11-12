@@ -1,0 +1,54 @@
+# Template unit systemd Server_penyimpanan.
+# Dipasang oleh scripts/install_pi.sh (placeholder @...@ diganti otomatis).
+[Unit]
+Description=Server_penyimpanan - personal cloud storage
+Documentation=https://github.com/MiftahulKhoiri/Server_penyimpanan
+After=network-online.target local-fs.target
+Wants=network-online.target
+# Sengaja TIDAK memakai RequiresMountsFor: bila SSD belum ter-mount, server tetap
+# hidup dalam mode degraded (API 503 + /system/health melaporkan masalahnya)
+# dan otomatis pulih ketika SSD tersedia.
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+WorkingDirectory=@INSTALL_DIR@
+EnvironmentFile=@CONFIG_FILE@
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=@INSTALL_DIR@/.venv/bin/python @INSTALL_DIR@/run.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+
+# Batas sumber daya untuk Raspberry Pi 3 (RAM 1 GB)
+MemoryHigh=450M
+MemoryMax=650M
+TasksMax=64
+LimitNOFILE=4096
+
+# Hardening: proses hanya bisa menulis ke SSD & HDD
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=-@PRIMARY_MOUNT@ -@BACKUP_MOUNT@
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

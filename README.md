@@ -5,8 +5,31 @@ untuk menyimpan foto, video, dan dokumen. Dibangun dengan FastAPI + SQLite, tanp
 
 > **Status: dalam pengembangan.** Tahap yang sudah selesai: kerangka proyek, database + migrasi,
 > autentikasi, admin pengguna, file & folder management, upload besar (chunked/resumable),
-> media (streaming, thumbnail), status SSD/HDD, dashboard sistem, backup ke HDD, trash, dan
-> activity log. Deployment Raspberry Pi (script instalasi, systemd) menyusul.
+> media (streaming, thumbnail), status SSD/HDD, dashboard sistem, backup ke HDD, trash,
+> activity log, dan deployment Raspberry Pi (script instalasi, systemd, update, restore).
+
+## Instalasi di Raspberry Pi
+
+```bash
+git clone https://github.com/MiftahulKhoiri/Server_penyimpanan.git
+cd Server_penyimpanan
+python3 scripts/check_storage.py            # cek SSD & HDD (read-only)
+sudo ./scripts/install_pi.sh --admin admin  # pasang, buat admin, jalankan otomatis saat boot
+```
+
+Panduan lengkap (menyiapkan SSD/HDD & fstab, konfigurasi, akses dari luar rumah, update,
+backup, restore, pemecahan masalah): **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
+| Script | Fungsi |
+|---|---|
+| `scripts/install_pi.sh` | Instalasi/pemasangan ulang (idempoten; konfigurasi & data tidak ditimpa) |
+| `scripts/update.sh` | Backup DB → `git pull` → pasang ulang → restart → cek health |
+| `scripts/manage.sh` | `status`, `logs`, `check-storage`, `create-admin`, `backup-now`, `restore`, ... |
+| `scripts/check_storage.py` | Periksa mount, filesystem, UUID, fstab (`nofail`), izin tulis SSD/HDD |
+| `scripts/prepare_storage.sh` | Buat direktori data di disk yang **sudah** ter-mount (tidak pernah memformat) |
+| `scripts/restore_backup.py` | Restore database/file dari HDD (simulasi kecuali `--apply`, verifikasi SHA-256) |
+| `scripts/uninstall.sh` | Lepas layanan & kode; data tidak dihapus |
+| `deploy/server-penyimpanan.service` | Unit systemd: user non-root, hardening, batas RAM |
 
 ## Fitur yang sudah tersedia
 
@@ -39,7 +62,7 @@ tests/                 pytest
 
 File pengguna **tidak** pernah disimpan di direktori kode; lokasinya diatur lewat `.env`.
 
-## Menjalankan untuk pengembangan
+## Menjalankan untuk pengembangan (tanpa systemd)
 
 ```bash
 python3 -m venv .venv
@@ -49,7 +72,7 @@ cp .env.example .env && chmod 600 .env
 # serta arahkan semua path ke folder lokal di luar direktori proyek.
 .venv/bin/python scripts/init_db.py
 .venv/bin/python scripts/create_admin.py --username admin
-.venv/bin/python run.py
+scripts/run_server.sh   # atau: .venv/bin/python run.py
 ```
 
 Dokumentasi interaktif: `http://<ip-pi>:8000/docs` (matikan dengan `ENABLE_DOCS=false`).
