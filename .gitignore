@@ -1,0 +1,30 @@
+# Rahasia & konfigurasi lokal
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Data runtime (tidak pernah di repo)
+*.db
+*.db-wal
+*.db-shm
+*.bak
+/data/
+/dev-data/
+/storage-data/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
