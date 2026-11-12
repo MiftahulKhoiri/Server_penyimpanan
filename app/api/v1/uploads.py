@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from typing import Annotated
+from typing import Annotated, Any
 
 import anyio
 from fastapi import APIRouter, Header, Path, Request, status
@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from starlette.requests import ClientDisconnect
 
+from app.api.openapi_meta import binary_body
 from app.api.v1.files import write_all
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.core.errors import AppError, unprocessable
@@ -66,12 +67,22 @@ def list_active_uploads(user: CurrentUser, db: DbSession) -> list[UploadOut]:
     return [upload_service.to_out(db, row) for row in rows]
 
 
-@router.api_route(
-    "/{upload_id}/chunks/{chunk_index}",
-    methods=["PUT", "POST"],
-    response_model=ChunkResult,
-    responses={400: {"description": "Ukuran chunk salah"}, 409: {"description": "Upload tidak aktif"},
-               410: {"description": "Kedaluwarsa"}, 422: {"description": "Checksum chunk salah"}},
+_CHUNK_BODY = binary_body("Isi chunk mentah; ukuran tepat chunk_size (chunk terakhir = sisa)")
+_CHUNK_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"description": "Ukuran chunk salah"}, 409: {"description": "Upload tidak aktif"},
+    410: {"description": "Kedaluwarsa"}, 422: {"description": "Checksum chunk salah"},
+}
+
+
+@router.post(
+    "/{upload_id}/chunks/{chunk_index}", response_model=ChunkResult, responses=_CHUNK_RESPONSES,
+    operation_id="upload_chunk_post", summary="Upload Chunk (alternatif POST)",
+    openapi_extra=_CHUNK_BODY,
+)
+@router.put(
+    "/{upload_id}/chunks/{chunk_index}", response_model=ChunkResult, responses=_CHUNK_RESPONSES,
+    operation_id="upload_chunk", summary="Upload Chunk",
+    openapi_extra=_CHUNK_BODY,
 )
 async def upload_chunk(
     upload_id: str,

@@ -1,8 +1,9 @@
 from fastapi import APIRouter
 
+from app.api.openapi_meta import COMMON_RESPONSES
 from app.api.v1 import activity, admin, auth, files, folders, media, storage, system, trash, uploads
 
-api_router = APIRouter()
+api_router = APIRouter(responses=COMMON_RESPONSES)
 api_router.include_router(auth.router)
 api_router.include_router(files.router)
 api_router.include_router(folders.router)

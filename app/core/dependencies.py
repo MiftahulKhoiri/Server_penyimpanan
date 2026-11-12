@@ -20,7 +20,11 @@ from app.services import auth_service
 from app.services.storage_guard import check_location
 from app.services.storage_paths import StoragePaths
 
-_bearer = HTTPBearer(auto_error=False, description="Access token JWT dari /api/v1/auth/login")
+_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="BearerToken",
+    description="Tempel `access_token` dari POST /api/v1/auth/login (berlaku 15 menit).",
+)
 
 
 def get_settings(request: Request) -> Settings:

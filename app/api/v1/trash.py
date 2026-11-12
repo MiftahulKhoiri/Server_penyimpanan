@@ -42,7 +42,9 @@ def restore_item(file_id: str, request: Request, user: CurrentUser, db: DbSessio
     return RestoreResult(**trash_service.restore(db, user, item, client_info(request)))
 
 
-@router.api_route("/{file_id}/delete", methods=["POST", "DELETE"], response_model=PurgeResult)
+@router.delete("/{file_id}/delete", response_model=PurgeResult, operation_id="purge_item_delete",
+                summary="Purge Item (alternatif DELETE)")
+@router.post("/{file_id}/delete", response_model=PurgeResult, operation_id="purge_item", summary="Purge Item")
 def purge_item(file_id: str, request: Request, user: CurrentUser, db: DbSession, storage: StorageDep) -> PurgeResult:
     """Hapus PERMANEN satu item dari trash beserta data fisiknya. Tidak bisa dibatalkan."""
     item = trash_service.get_item(db, user.id, file_id)

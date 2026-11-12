@@ -16,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.api import openapi_meta
 from app.api.v1.router import api_router
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
@@ -121,8 +122,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Server_penyimpanan API",
-        description="Backend Personal Cloud Storage untuk Raspberry Pi",
+        description=openapi_meta.DESCRIPTION,
         version=__version__,
+        openapi_tags=openapi_meta.TAGS,
+        # operationId = nama fungsi endpoint: stabil & enak dipakai generator client Kotlin.
+        generate_unique_id_function=lambda route: route.name,
+        license_info={"name": "GPL-3.0", "url": "https://www.gnu.org/licenses/gpl-3.0.html"},
         docs_url="/docs" if settings.ENABLE_DOCS else None,
         redoc_url="/redoc" if settings.ENABLE_DOCS else None,
         openapi_url="/openapi.json" if settings.ENABLE_DOCS else None,

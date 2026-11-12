@@ -4,7 +4,7 @@
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m pytest                     # 188 tes otomatis (±30 detik)
+.venv/bin/python -m pytest                     # 197 tes otomatis (±40 detik)
 .venv/bin/python -m pytest --cov=app           # dengan laporan coverage
 tests/deploy/run_e2e.sh                        # uji deployment end-to-end (Docker, ±8 menit)
 python tests/load/load_test.py --base http://127.0.0.1:8000 --password <admin> --pid <pid>
@@ -60,3 +60,15 @@ SHA-256 hasil download.
 | File biner acak ditolak karena kebetulan mirip tanda tangan MP3 (2 byte) | uji beban | `test_upload_races.py::test_weak_signatures_*` |
 | RSS membengkak karena fragmentasi malloc antar-thread (321 MB) | uji beban | `MALLOC_ARENA_MAX=2` + `THREADPOOL_SIZE` (243 MB puncak) |
 | Pencarian admin tidak meng-escape `%`/`_` | coverage | `test_failure_paths.py::test_admin_search_escapes_wildcards` |
+| `operationId` duplikat & acak pada endpoint dua method (generator client bingung) | openapi-generator | `test_docs.py::test_operation_ids_unique_and_stable` |
+| Endpoint upload tidak mendeklarasikan body biner: client Kotlin `uploadChunk()` tanpa parameter data | openapi-generator | `test_docs.py::test_streaming_uploads_declare_binary_body` |
+
+## Sinkronisasi dokumentasi
+
+`tests/test_docs.py` gagal bila dokumentasi tertinggal dari kode:
+- setiap endpoint di aplikasi tercantum di `docs/API.md` (bagian 11), dan sebaliknya;
+- setiap kode error yang dipakai kode ada di tabel `docs/API.md` (bagian 10);
+- angka batas default di dokumen sama dengan `Settings`;
+- bentuk contoh respons JSON di dokumen sama dengan respons asli;
+- kolom "Akses" (admin/user) sesuai perilaku server;
+- `docs/openapi.json` sama dengan hasil `scripts/export_openapi.py`.

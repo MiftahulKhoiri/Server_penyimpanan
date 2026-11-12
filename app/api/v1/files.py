@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from starlette.requests import ClientDisconnect
 
+from app.api.openapi_meta import binary_body
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.core.errors import AppError, unprocessable
 from app.schemas.files import (
@@ -76,6 +77,7 @@ def list_files(
     status_code=status.HTTP_201_CREATED,
     responses={411: {"description": "Content-Length wajib"}, 413: {"description": "Terlalu besar"},
                415: {"description": "Jenis file ditolak"}, 507: {"description": "Ruang tidak cukup"}},
+    openapi_extra=binary_body("Isi file mentah (bukan multipart); header Content-Length wajib"),
 )
 async def upload_simple(
     request: Request,
