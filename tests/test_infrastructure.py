@@ -87,7 +87,7 @@ def test_ssd_not_mounted_server_degraded_and_no_db_written(make_client, tmp_path
 def test_health_ok(client):
     resp = client.get("/api/v1/system/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "database": "ok", "primary_storage": "ok"}
+    assert resp.json() == {"status": "ok", "database": "ok", "primary_storage": "ok", "backup_storage": "ok"}
 
 
 # ---------------- Migrasi ----------------

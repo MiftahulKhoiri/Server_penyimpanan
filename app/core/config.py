@@ -95,6 +95,23 @@ class Settings(BaseSettings):
     # --- Trash ---
     TRASH_RETENTION_DAYS: int = Field(30, ge=1, le=3650)
 
+    # --- Backup ke HDD ---
+    # 0 = backup otomatis mati (default). Backup tidak pernah menghapus file asli.
+    BACKUP_AUTO_INTERVAL_HOURS: int = Field(0, ge=0, le=24 * 30)
+    # Jumlah salinan database yang disimpan di HDD. 0 = simpan semua (tidak ada yang dihapus).
+    BACKUP_DB_KEEP: int = Field(0, ge=0, le=1000)
+    BACKUP_MIN_FREE_SPACE_BYTES: int = Field(1024**3, ge=0)
+
+    # --- Media / thumbnail ---
+    THUMBNAIL_ENABLED: bool = True
+    THUMBNAIL_SIZE: int = Field(320, ge=64, le=1024)
+    THUMBNAIL_QUALITY: int = Field(80, ge=30, le=95)
+    # Gambar di atas batas piksel ini tidak dibuatkan thumbnail (lindungi RAM 1 GB).
+    THUMBNAIL_MAX_PIXELS: int = Field(80_000_000, ge=1_000)
+    FFMPEG_PATH: str = "ffmpeg"
+    FFPROBE_PATH: str = "ffprobe"
+    MEDIA_TOOL_TIMEOUT_SECONDS: int = Field(30, ge=5, le=600)
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

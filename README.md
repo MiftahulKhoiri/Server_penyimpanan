@@ -4,8 +4,9 @@ Backend **Personal Cloud Storage** untuk Raspberry Pi 3 Model B+ (RAM 1 GB), dip
 untuk menyimpan foto, video, dan dokumen. Dibangun dengan FastAPI + SQLite, tanpa Docker, tanpa layanan cloud.
 
 > **Status: dalam pengembangan.** Tahap yang sudah selesai: kerangka proyek, database + migrasi,
-> autentikasi, admin pengguna, file & folder management, dan upload besar (chunked/resumable).
-> Media streaming, storage/backup, endpoint trash, dan deployment systemd menyusul.
+> autentikasi, admin pengguna, file & folder management, upload besar (chunked/resumable),
+> media (streaming, thumbnail), status SSD/HDD, dashboard sistem, backup ke HDD, trash, dan
+> activity log. Deployment Raspberry Pi (script instalasi, systemd) menyusul.
 
 ## Fitur yang sudah tersedia
 
@@ -105,6 +106,66 @@ Upload yang tidak disentuh selama `UPLOAD_EXPIRE_HOURS` dihapus otomatis.
 Nama file hanya disimpan sebagai label; file fisik disimpan dengan nama UUID di
 `PRIMARY_STORAGE_PATH/files/<user_id>/`, sehingga nama file tidak bisa dipakai untuk path traversal.
 MIME ditentukan dari isi file; file yang isinya tidak cocok dengan ekstensinya ditolak (415).
+
+## Endpoint media, storage, dan sistem
+
+| Method | Path | Akses | Keterangan |
+|---|---|---|---|
+| GET | `/api/v1/media/photos` | user | Galeri foto (semua folder atau `folder_id`), sort & pagination |
+| GET | `/api/v1/media/videos` | user | Daftar video |
+| GET | `/api/v1/media/{id}` | user | Info media; durasi & resolusi video dibaca ffprobe sekali lalu disimpan |
+| GET | `/api/v1/media/{id}/stream` | user | Streaming inline dengan HTTP Range (seek di pemutar video) |
+| GET | `/api/v1/media/{id}/thumbnail` | user | Thumbnail JPEG, dibuat saat pertama diminta lalu di-cache (`ETag`) |
+| GET | `/api/v1/storage/status` | user | Kapasitas SSD/HDD (ringkas) + pemakaian & kuota Anda |
+| GET | `/api/v1/storage/ssd` | admin | Detail SSD: mount, filesystem, device, kapasitas |
+| GET | `/api/v1/storage/hdd` | admin | Detail HDD; bila tidak ter-mount `available=false`, server tetap jalan |
+| GET | `/api/v1/system/health` | publik | Status database & penyimpanan |
+| GET | `/api/v1/system/status` | admin | CPU, RAM, suhu, uptime, database, SSD/HDD, ketersediaan ffmpeg |
+| GET | `/api/v1/system/statistics` | admin | Jumlah pengguna, file, ukuran total, per jenis media, trash, upload aktif |
+
+**Thumbnail** memakai Pillow (mode *draft*: JPEG didekode langsung pada skala kecil, sehingga foto
+24 MP hanya menambah RAM ±6 MB) dan ffmpeg untuk video. Hanya satu thumbnail dibuat dalam satu waktu,
+gambar di atas `THUMBNAIL_MAX_PIXELS` dilewati. ffmpeg bersifat opsional: tanpa ffmpeg, streaming
+tetap berjalan, hanya thumbnail video & info durasi yang tidak tersedia
+(`sudo apt install ffmpeg` untuk mengaktifkan).
+
+Pemutar video Android (ExoPlayer/Media3) perlu mengirim header `Authorization: Bearer <token>`
+pada request stream (lewat `DefaultHttpDataSource.Factory().setDefaultRequestProperties(...)`).
+
+## Endpoint backup, trash, dan activity log
+
+| Method | Path | Akses | Keterangan |
+|---|---|---|---|
+| POST | `/api/v1/storage/backup` | admin | Mulai backup SSD → HDD di latar belakang (202). Body opsional `{"verify_existing": true}` |
+| GET | `/api/v1/storage/backup` | admin | Riwayat job backup |
+| GET | `/api/v1/storage/backup/{job_id}` | admin | Status + laporan (file disalin/dilewati/gagal & alasannya, backup database) |
+| GET | `/api/v1/trash` | user | Isi trash, beserta `purge_after` |
+| POST | `/api/v1/trash/{id}/restore` | user | Kembalikan file/folder (`id` = ID file atau folder) |
+| POST/DELETE | `/api/v1/trash/{id}/delete` | user | Hapus permanen satu item beserta data fisik & thumbnail |
+| DELETE | `/api/v1/trash` | user | Kosongkan trash |
+| GET | `/api/v1/activity` | user | Riwayat aktivitas sendiri (`action` persis atau awalan seperti `file.`, `since`, `until`) |
+| GET | `/api/v1/admin/activity` | admin | Seluruh activity log, filter `user_id` |
+
+**Cara kerja backup**
+- Bersifat inkremental: file yang sudah tercatat ter-backup dengan ukuran sama dilewati.
+  `verify_existing` menghitung ulang SHA-256 salinan di HDD dan memperbaiki salinan yang rusak.
+- Setiap file disalin sambil dihitung SHA-256-nya, lalu dibandingkan dengan SHA-256 saat upload.
+  Bila data di SSD ternyata rusak, salinan lama di HDD **tidak** ditimpa dan file dicatat di laporan
+  (`source_checksum_mismatch`).
+- Database ikut di-backup ke `BACKUP_STORAGE_PATH/database/` memakai SQLite online backup lalu dicek `integrity_check`.
+- **File asli tidak pernah dihapus atau diubah.** Salinan di HDD juga tidak dihapus walau file asalnya
+  dihapus (bukan mirror). Rotasi salinan database hanya aktif bila `BACKUP_DB_KEEP` > 0.
+- Backup otomatis **mati secara default**. Aktifkan dengan `BACKUP_AUTO_INTERVAL_HOURS`; pengecekannya
+  berjalan pada siklus pemeliharaan (`UPLOAD_CLEANUP_INTERVAL_SECONDS`).
+- Bila HDD tidak tersedia, backup ditolak (503) dan server utama tetap berjalan normal.
+
+**Trash:** hapus biasa hanya memindahkan ke trash. Item dihapus permanen otomatis setelah
+`TRASH_RETENTION_DAYS` (default 30 hari), atau manual lewat endpoint trash. Folder dipulihkan sebagai
+satu kesatuan; file yang sebelumnya dihapus sendiri-sendiri tetap di trash.
+
+**Activity log** mencatat login, logout, upload, unduh, streaming, rename, pindah, salin, hapus,
+restore, hapus permanen, ganti password, aksi admin, backup, dan start server (beserta ringkasan
+konfigurasi). Password, token, dan secret tidak pernah dicatat.
 
 Format error seragam: `{"detail": "<pesan>", "code": "<kode>"}`.
 
