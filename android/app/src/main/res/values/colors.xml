@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#1565C0</color>
+    <color name="brand_light">#64B5F6</color>
+    <color name="background">#FFFFFFFF</color>
+    <color name="ic_launcher_background">#1565C0</color>
+</resources>

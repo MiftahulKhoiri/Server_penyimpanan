@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Penyimpanan</string>
+    <string name="channel_transfers">Upload &amp; unduhan</string>
+    <string name="channel_transfers_desc">Progres upload dan unduhan file</string>
+    <string name="channel_backup">Backup otomatis</string>
+    <string name="channel_backup_desc">Backup foto &amp; video dari galeri</string>
+</resources>

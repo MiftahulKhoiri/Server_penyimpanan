@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ikon original: awan dengan panah unggah (108dp, area aman 66dp di tengah). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,47.5c-1.2,-8.6 -8.6,-15.2 -17.5,-15.2c-7,0 -13.1,4.1 -15.9,10.1C31.9,43.1 27,48.9 27,55.8C27,63.2 33,69.2 40.4,69.2h31c6.1,0 11.1,-5 11.1,-11.1C82.5,52.3 77.9,47.8 72,47.5z" />
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M54,46l-9,9h6v9h6v-9h6z" />
+</vector>

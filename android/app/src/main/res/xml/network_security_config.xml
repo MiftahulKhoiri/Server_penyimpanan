@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Server_penyimpanan berjalan di jaringan rumah lewat HTTP biasa (http://192.168.x.x:8000),
+  atau lewat Tailscale (http://100.x.x.x:8000, sudah terenkripsi oleh VPN).
+  Karena itu HTTP tanpa TLS diizinkan. Untuk akses lewat internet terbuka gunakan HTTPS
+  (reverse proxy) - lihat docs/DEPLOYMENT.md bagian 6.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- Sertifikat buatan sendiri (reverse proxy HTTPS di LAN) yang dipasang pengguna -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -12,6 +12,7 @@ Data disimpan di SSD dan di-backup ke HDD.
 | **[docs/API.md](docs/API.md)** | Panduan API untuk developer aplikasi: autentikasi & refresh token, upload chunked & resume, streaming video (ExoPlayer), kode error, contoh `curl` & Kotlin |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Instalasi di Raspberry Pi: SSD/HDD & fstab, systemd, konfigurasi, akses dari luar rumah, update, backup, restore, pemecahan masalah |
 | **[docs/TESTING.md](docs/TESTING.md)** | Cara menjalankan tes, pemetaan tes wajib, daftar bug yang ditemukan lewat pengujian |
+| **[android/README.md](android/README.md)** | Aplikasi Android: fitur, cara instal APK (rilis `android-latest`), build & tes |
 | [docs/openapi.json](docs/openapi.json) | Spesifikasi OpenAPI untuk generator client (Kotlin dsb.) |
 | `http://<server>:8000/docs` | Swagger interaktif dari server yang sedang berjalan |
 

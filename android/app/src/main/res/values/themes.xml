@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema dasar jendela; tampilan Compose memakai Material 3 (ui/theme/Theme.kt). -->
+    <style name="Theme.Penyimpanan" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/background</item>
+    </style>
+
+    <style name="Theme.Penyimpanan.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Penyimpanan</item>
+    </style>
+</resources>

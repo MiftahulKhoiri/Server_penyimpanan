@@ -1,0 +1,97 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "app/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Pasang dependensi backend
+        working-directory: .
+        run: pip install -r requirements.txt
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Jalankan backend untuk tes integrasi
+        run: |
+          scripts/test-server.sh start > "$RUNNER_TEMP/sp-env"
+          PASS=$(grep '^SP_ADMIN_PASSWORD=' "$RUNNER_TEMP/sp-env" | cut -d= -f2-)
+          echo "::add-mask::$PASS"
+          cat "$RUNNER_TEMP/sp-env" >> "$GITHUB_ENV"
+
+      - name: Unit & integration test
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Build APK release
+        env:
+          # Opsional: isi secrets ini agar APK ditandatangani kunci rilis sendiri.
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          fi
+          ./gradlew assembleRelease --console=plain
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Penyimpanan.apk"
+
+      - name: Hentikan backend
+        if: always()
+        run: scripts/test-server.sh stop || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-build
+          path: |
+            ${{ runner.temp }}/Penyimpanan.apk
+            android/app/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Terbitkan ke GitHub Release (android-latest)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest "$RUNNER_TEMP/Penyimpanan.apk" \
+            --title "Aplikasi Android (build #${{ github.run_number }})" \
+            --notes "APK otomatis dari commit ${{ github.sha }}. Instal di HP Android 10 ke atas." \
+            --target "${{ github.sha }}" --latest=false

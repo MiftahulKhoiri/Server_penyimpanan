@@ -1,0 +1,11 @@
+# Build & cache Gradle/Android
+.gradle/
+.kotlin/
+build/
+*/build/
+local.properties
+*.iml
+captures/
+# Kunci rilis tidak boleh masuk repo (debug.keystore sengaja di-commit)
+*.jks
+release.keystore
