@@ -100,22 +100,31 @@ def _pillow_thumbnail(src: Path, dest: Path, settings: Settings) -> str:
         return _UNSUPPORTED
     size = settings.THUMBNAIL_SIZE
     try:
-        with Image.open(src) as img:
-            width, height = img.size
+        with Image.open(src) as source:
+            width, height = source.size
             if width * height > settings.THUMBNAIL_MAX_PIXELS:
                 logger.info("Gambar terlalu besar untuk thumbnail (%dx%d)", width, height)
                 return _REJECTED
-            img.draft("RGB", (size * 2, size * 2))  # JPEG: dekode skala 1/2..1/8
-            img = ImageOps.exif_transpose(img)
-            img.thumbnail((size, size))
-            if img.mode in ("RGBA", "LA", "P"):
-                img = img.convert("RGBA")
-                background = Image.new("RGB", img.size, (255, 255, 255))
-                background.paste(img, mask=img.getchannel("A"))
-                img = background
-            elif img.mode != "RGB":
-                img = img.convert("RGB")
-            img.save(dest, "JPEG", quality=settings.THUMBNAIL_QUALITY)
+            source.draft("RGB", (size * 2, size * 2))  # JPEG: dekode langsung pada skala 1/2..1/8
+            # Perkecil DULU (in-place) baru putar sesuai EXIF, agar tidak pernah ada salinan
+            # gambar ukuran penuh di RAM. Kotak thumbnail persegi, jadi urutan ini aman.
+            source.thumbnail((size, size))
+            oriented = ImageOps.exif_transpose(source)
+            if oriented.mode in ("RGBA", "LA", "P"):
+                rgba = oriented.convert("RGBA")
+                final = Image.new("RGB", rgba.size, (255, 255, 255))
+                final.paste(rgba, mask=rgba.getchannel("A"))
+                rgba.close()
+            elif oriented.mode != "RGB":
+                final = oriented.convert("RGB")
+            else:
+                final = oriented
+            try:
+                final.save(dest, "JPEG", quality=settings.THUMBNAIL_QUALITY)
+            finally:
+                for image in {id(final): final, id(oriented): oriented}.values():
+                    if image is not source:
+                        image.close()
         return _OK
     except Image.DecompressionBombError:
         return _REJECTED

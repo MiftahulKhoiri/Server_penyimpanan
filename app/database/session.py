@@ -38,6 +38,8 @@ def make_engine(db_path: Path) -> Engine:
         cur.execute("PRAGMA synchronous=NORMAL")
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA cache_size=-2048")  # 2 MiB per koneksi (hemat RAM Pi 3)
+        cur.execute("PRAGMA temp_store=FILE")
         cur.close()
 
     return engine

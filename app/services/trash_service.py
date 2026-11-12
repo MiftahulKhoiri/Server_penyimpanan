@@ -136,13 +136,14 @@ def purge_item(
     if item.file_id:
         row = db.get(StoredFile, item.file_id)
         files = [row] if row else []
-        target_type, target_id, name = "file", item.file_id, item.original_name
+        target_type, target_id, name = "file", str(item.file_id), item.original_name
     else:
+        assert item.folder_id is not None
         folder_ids = _subtree_ids(db, item.folder_id)  # semua isi, apa pun statusnya
         files = []
         for start in range(0, len(folder_ids), _BATCH):
             files += db.scalars(select(StoredFile).where(StoredFile.folder_id.in_(folder_ids[start : start + _BATCH]))).all()
-        target_type, target_id, name = "folder", item.folder_id, item.original_name
+        target_type, target_id, name = "folder", str(item.folder_id), item.original_name
     for row in files:
         relpaths.append(row.storage_path)
         if row.thumbnail_path:

@@ -135,7 +135,7 @@ def mark_interrupted_jobs(db: Session) -> int:
         .values(status=BackupStatus.FAILED.value, error_message="interrupted", finished_at=utcnow())
     )
     db.commit()
-    return result.rowcount or 0
+    return getattr(result, 'rowcount', 0) or 0
 
 
 def run_backup(database: Database, settings: Settings, job_id: int, verify_existing: bool = False) -> None:
@@ -146,10 +146,11 @@ def run_backup(database: Database, settings: Settings, job_id: int, verify_exist
         pass
     db = database.session()
     started = time.monotonic()
-    job = db.get(BackupJob, job_id)
-    if job is None:
+    found = db.get(BackupJob, job_id)
+    if found is None:
         db.close()
         return
+    job: BackupJob = found
     job.status = BackupStatus.RUNNING.value
     job.started_at = utcnow()
     db.commit()
@@ -159,6 +160,18 @@ def run_backup(database: Database, settings: Settings, job_id: int, verify_exist
     failures: list[dict] = []
     report: dict = {"verify_existing": verify_existing, "database_backup": None, "failures": failures}
     last_progress = time.monotonic()
+    # ID file yang sudah terverifikasi di HDD. Ditulis ke DB dalam transaksi singkat secara
+    # berkala: transaksi tulis TIDAK boleh terbuka selama menyalin file (bisa bermenit-menit
+    # di Pi 3), karena kunci tulis SQLite akan memblokir login/upload pengguna lain.
+    verified: list[str] = []
+
+    def flush() -> None:
+        stamp = utcnow()
+        for start in range(0, len(verified), 500):
+            batch = verified[start : start + 500]
+            db.execute(update(StoredFile).where(StoredFile.id.in_(batch)).values(backed_up_at=stamp))
+        verified.clear()
+        db.commit()
 
     def fail(file_id: str, reason: str) -> None:
         job.files_failed += 1
@@ -201,7 +214,7 @@ def run_backup(database: Database, settings: Settings, job_id: int, verify_exist
                     continue
                 if _hash_file(dest) == sha:
                     if backed_up_at is None:
-                        db.execute(update(StoredFile).where(StoredFile.id == file_id).values(backed_up_at=utcnow()))
+                        verified.append(file_id)
                     job.files_skipped += 1
                     continue
                 report.setdefault("repaired", 0)
@@ -227,23 +240,26 @@ def run_backup(database: Database, settings: Settings, job_id: int, verify_exist
             dest.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
             os.replace(temp, dest)
             fsync_dir(dest.parent)
-            db.execute(update(StoredFile).where(StoredFile.id == file_id).values(backed_up_at=utcnow()))
+            verified.append(file_id)
             job.files_copied += 1
             job.bytes_copied += size
 
-            if time.monotonic() - last_progress > PROGRESS_EVERY_SECONDS:
-                db.commit()
+            if time.monotonic() - last_progress > PROGRESS_EVERY_SECONDS or len(verified) >= 200:
+                flush()
                 last_progress = time.monotonic()
 
+        flush()
         job.status = BackupStatus.COMPLETED.value if job.files_failed == 0 else BackupStatus.PARTIAL.value
     except BackupAborted as exc:
+        flush()
         job.status = BackupStatus.FAILED.value if job.files_copied == 0 else BackupStatus.PARTIAL.value
         job.error_message = str(exc)
     except Exception as exc:
         logger.exception("Backup gagal")
         db.rollback()
-        job = db.get(BackupJob, job_id)
-        assert job is not None
+        reloaded = db.get(BackupJob, job_id)
+        assert reloaded is not None
+        job = reloaded
         job.status = BackupStatus.FAILED.value
         job.error_message = exc.__class__.__name__
     finally:

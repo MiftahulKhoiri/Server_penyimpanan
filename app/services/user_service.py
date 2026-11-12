@@ -25,8 +25,9 @@ def list_users(db: Session, *, page: int, page_size: int, search: str | None) ->
     query = select(User)
     count_query = select(func.count(User.id))
     if search:
-        pattern = f"%{search.lower()}%"
-        cond = or_(User.username.like(pattern), User.email.like(pattern))
+        escaped = search.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        cond = or_(User.username.like(pattern, escape="\\"), User.email.like(pattern, escape="\\"))
         query = query.where(cond)
         count_query = count_query.where(cond)
     total = db.scalar(count_query) or 0

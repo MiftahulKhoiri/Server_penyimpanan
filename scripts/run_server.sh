@@ -27,4 +27,5 @@ elif [ ! -f .env ]; then
     echo "Tidak ada .env. Salin dulu: cp .env.example .env && chmod 600 .env (lalu isi SECRET_KEY)" >&2
     exit 1
 fi
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"  # sama seperti layanan systemd
 exec .venv/bin/python run.py

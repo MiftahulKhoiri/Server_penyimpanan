@@ -141,7 +141,7 @@ def revoke_family(db: Session, family_id: str, reason: str) -> int:
         .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=utcnow(), revoked_reason=reason)
     )
-    return result.rowcount or 0
+    return getattr(result, 'rowcount', 0) or 0
 
 
 def revoke_all_for_user(db: Session, user_id: int, reason: str) -> int:
@@ -150,7 +150,7 @@ def revoke_all_for_user(db: Session, user_id: int, reason: str) -> int:
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=utcnow(), revoked_reason=reason)
     )
-    return result.rowcount or 0
+    return getattr(result, 'rowcount', 0) or 0
 
 
 class RefreshReuseDetected(AppError):

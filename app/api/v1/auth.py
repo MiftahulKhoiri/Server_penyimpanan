@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request, status
 
 from app.core.dependencies import (
@@ -26,7 +28,7 @@ from app.utils.request_info import client_info
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_AUTH_ERRORS = {401: {"description": "Tidak terautentikasi"}}
+_AUTH_ERRORS: dict[int | str, dict[str, Any]] = {401: {"description": "Tidak terautentikasi"}}
 
 
 def _token_response(tokens: auth_service.IssuedTokens) -> TokenResponse:

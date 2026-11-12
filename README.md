@@ -80,8 +80,12 @@ Dokumentasi interaktif: `http://<ip-pi>:8000/docs` (matikan dengan `ENABLE_DOCS=
 ## Testing
 
 ```bash
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest          # 188 tes otomatis
+tests/deploy/run_e2e.sh             # uji deployment end-to-end (Docker + systemd + Python 3.11)
 ```
+
+Pemetaan tes wajib spesifikasi ke tes nyata, uji beban, dan daftar bug yang ditemukan lewat
+pengujian: **[docs/TESTING.md](docs/TESTING.md)**.
 
 ## Endpoint autentikasi
 

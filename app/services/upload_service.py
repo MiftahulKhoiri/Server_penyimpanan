@@ -232,7 +232,12 @@ def init_upload(
 
 # ---------------- Chunk ----------------
 def record_chunk(db: Session, settings: Settings, upload: Upload, index: int, size: int, sha256: str) -> bool:
-    """Simpan metadata chunk. Return True bila chunk ini sebelumnya sudah ada dengan isi identik."""
+    """Simpan metadata chunk. Return True bila chunk ini sebelumnya sudah ada dengan isi identik.
+
+    Status upload hanya diperbarui bila upload MASIH aktif (UPDATE bersyarat). Dengan begitu
+    chunk yang selesai terlambat tidak bisa menghidupkan lagi upload yang sudah gagal,
+    dibatalkan, atau sedang/selesai diproses.
+    """
     now = utcnow()
     for attempt in range(2):
         existing = db.scalar(
@@ -252,13 +257,26 @@ def record_chunk(db: Session, settings: Settings, upload: Upload, index: int, si
             db.rollback()
             if attempt:
                 raise
-    upload.received_bytes = int(
+    received = int(
         db.scalar(select(func.coalesce(func.sum(UploadChunk.size_bytes), 0)).where(UploadChunk.upload_id == upload.id))
         or 0
     )
-    upload.status = UploadStatus.UPLOADING.value
-    upload.expires_at = now + timedelta(hours=settings.UPLOAD_EXPIRE_HOURS)
+    result = db.execute(
+        update(Upload)
+        .where(Upload.id == upload.id, Upload.status.in_(WRITABLE))
+        .values(
+            status=UploadStatus.UPLOADING.value,
+            received_bytes=received,
+            expires_at=now + timedelta(hours=settings.UPLOAD_EXPIRE_HOURS),
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if getattr(result, "rowcount", 0) != 1:
+        db.rollback()
+        raise conflict("upload_not_active", "Upload sudah tidak aktif (dibatalkan, gagal, atau sedang diproses)")
     db.commit()
+    db.refresh(upload)
     return same
 
 
@@ -275,11 +293,12 @@ def mark_failed(db: Session, storage: StoragePaths, registry: UploadHashRegistry
 
 def _compute_digest_from_disk(db: Session, storage: StoragePaths, upload: Upload) -> str:
     """Baca ulang data.part per chunk (blok 1 MB), verifikasi SHA-256 tiap chunk, hitung SHA-256 total."""
-    chunk_hashes = dict(
-        db.execute(
+    chunk_hashes: dict[int, str] = {
+        int(index): str(sha)
+        for index, sha in db.execute(
             select(UploadChunk.chunk_index, UploadChunk.sha256).where(UploadChunk.upload_id == upload.id)
         ).all()
-    )
+    }
     total = hashlib.sha256()
     path = storage.resolve(upload.temp_path)
     with open(path, "rb") as fh:
@@ -298,15 +317,10 @@ def _compute_digest_from_disk(db: Session, storage: StoragePaths, upload: Upload
     return total.hexdigest()
 
 
-def complete_upload(
-    db: Session,
-    settings: Settings,
-    storage: StoragePaths,
-    registry: UploadHashRegistry,
-    user: User,
-    upload: Upload,
-    client: ClientInfo,
-) -> StoredFile:
+def claim_upload(db: Session, upload: Upload) -> None:
+    """Tandai upload 'processing'. Harus dipanggil di bawah kunci eksklusif upload tersebut,
+    sehingga tidak ada chunk yang masih menulis dan chunk baru akan ditolak."""
+    db.refresh(upload)
     ensure_writable(upload)
     received = len(received_indices(db, upload.id))
     if received != upload.total_chunks:
@@ -317,12 +331,38 @@ def complete_upload(
         update(Upload)
         .where(Upload.id == upload.id, Upload.status.in_(WRITABLE))
         .values(status=UploadStatus.PROCESSING.value, updated_at=utcnow())
+        .execution_options(synchronize_session=False)
     )
     db.commit()
-    if claimed.rowcount != 1:
+    if getattr(claimed, "rowcount", 0) != 1:
         raise conflict("upload_busy", "Upload sedang diproses")
     db.refresh(upload)
 
+
+def complete_upload(
+    db: Session,
+    settings: Settings,
+    storage: StoragePaths,
+    registry: UploadHashRegistry,
+    user: User,
+    upload: Upload,
+    client: ClientInfo,
+) -> StoredFile:
+    """Klaim lalu finalisasi (dipakai bila pemanggil tidak perlu kunci, mis. skrip/tes)."""
+    claim_upload(db, upload)
+    return finish_claimed_upload(db, settings, storage, registry, user, upload, client)
+
+
+def finish_claimed_upload(
+    db: Session,
+    settings: Settings,
+    storage: StoragePaths,
+    registry: UploadHashRegistry,
+    user: User,
+    upload: Upload,
+    client: ClientInfo,
+) -> StoredFile:
+    """Verifikasi checksum & pindahkan ke lokasi final. Upload harus sudah di-claim."""
     started = time.monotonic()
     try:
         part = storage.resolve(upload.temp_path)
@@ -362,8 +402,9 @@ def complete_upload(
         db.commit()
         raise
 
-    upload = db.get(Upload, upload.id)
-    assert upload is not None
+    refreshed = db.get(Upload, upload.id)
+    assert refreshed is not None
+    upload = refreshed
     upload.status = UploadStatus.COMPLETED.value
     upload.file_id = stored.id
     upload.completed_at = utcnow()
@@ -379,14 +420,24 @@ def complete_upload(
 def cancel_upload(
     db: Session, storage: StoragePaths, registry: UploadHashRegistry, user: User, upload: Upload, client: ClientInfo
 ) -> Upload:
+    db.refresh(upload)
     if upload.status not in WRITABLE:
         raise conflict("upload_not_active", f"Upload tidak bisa dibatalkan (status: {upload.status})")
-    upload.status = UploadStatus.CANCELLED.value
+    result = db.execute(
+        update(Upload)
+        .where(Upload.id == upload.id, Upload.status.in_(WRITABLE))
+        .values(status=UploadStatus.CANCELLED.value, updated_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    if getattr(result, "rowcount", 0) != 1:
+        db.rollback()
+        raise conflict("upload_not_active", "Upload sudah tidak aktif")
     log_activity(
         db, "upload.cancel", user_id=user.id, ip_address=client.ip_address, user_agent=client.user_agent,
         target_type="upload", target_id=upload.id,
     )
     db.commit()
+    db.refresh(upload)
     _remove_upload_dir(storage, upload.id)
     registry.discard(upload.id)
     return upload
@@ -447,6 +498,6 @@ def cleanup_uploads(db: Session, storage: StoragePaths, registry: UploadHashRegi
             Upload.updated_at < now - timedelta(days=TERMINAL_ROW_RETENTION_DAYS),
         )
     )
-    stats["rows_deleted"] = result.rowcount or 0
+    stats["rows_deleted"] = getattr(result, 'rowcount', 0) or 0
     db.commit()
     return stats

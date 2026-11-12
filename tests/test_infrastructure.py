@@ -10,7 +10,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from pydantic import ValidationError
 from sqlalchemy import inspect
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import app.models  # noqa: F401
 from app.core.config import PROJECT_ROOT
@@ -137,12 +137,11 @@ def test_foreign_keys_enforced(tmp_path):
     db_path = tmp_path / "fk.db"
     engine = make_engine(db_path)
     migrate.upgrade_to_head(engine, db_path)
-    with pytest.raises(Exception):
-        with engine.begin() as conn:
-            conn.exec_driver_sql(
-                "INSERT INTO folders (id, owner_id, name, is_deleted, created_at, updated_at) "
-                "VALUES ('f1', 999, 'x', 0, '2026-01-01', '2026-01-01')"
-            )
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO folders (id, owner_id, name, is_deleted, created_at, updated_at) "
+            "VALUES ('f1', 999, 'x', 0, '2026-01-01', '2026-01-01')"
+        )
     engine.dispose()
 
 

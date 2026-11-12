@@ -36,6 +36,8 @@ router = APIRouter(
 )
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+# File milik pengguna bisa berupa HTML/SVG: jangan pernah dieksekusi sebagai halaman di origin server.
+FILE_SECURITY_HEADERS = {"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'"}
 
 
 def write_all(fd: int, data: bytes, offset: int) -> None:
@@ -104,8 +106,8 @@ async def upload_simple(
         raise AppError(413, "file_too_large", "File terlalu besar untuk upload sekali kirim; gunakan upload chunked")
 
     file_service.ensure_extension_allowed(settings, name)
-    target = file_service.resolve_folder_id(db, user.id, folder_id)
-    file_service.ensure_capacity(db, settings, storage, user, length)
+    target = await run_in_threadpool(file_service.resolve_folder_id, db, user.id, folder_id)
+    await run_in_threadpool(file_service.ensure_capacity, db, settings, storage, user, length)
 
     temp = storage.new_temp_file("simple")
     hasher = hashlib.sha256()
@@ -172,7 +174,7 @@ def download_file(file_id: str, request: Request, user: CurrentUser, db: DbSessi
         media_type=row.mime_type,
         filename=row.name,
         content_disposition_type="attachment",
-        headers={"X-Content-SHA256": row.sha256, "Cache-Control": "private, no-cache"},
+        headers={"X-Content-SHA256": row.sha256, "Cache-Control": "private, no-cache", **FILE_SECURITY_HEADERS},
     )
 
 

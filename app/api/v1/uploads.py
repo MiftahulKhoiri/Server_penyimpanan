@@ -7,6 +7,7 @@ from typing import Annotated
 
 import anyio
 from fastapi import APIRouter, Header, Path, Request, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from starlette.requests import ClientDisconnect
 
@@ -16,6 +17,7 @@ from app.core.errors import AppError, unprocessable
 from app.models import Upload, UploadStatus
 from app.schemas.files import ChunkResult, FileOut, UploadCompleteOut, UploadInitRequest, UploadOut
 from app.services import upload_service
+from app.services.upload_locks import UploadLocks
 from app.services.upload_service import UploadHashRegistry
 from app.utils.mime import SNIFF_BYTES, MimeMismatch, decide_mime
 from app.utils.request_info import client_info
@@ -31,6 +33,10 @@ _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 def _registry(request: Request) -> UploadHashRegistry:
     return request.app.state.upload_hashes
+
+
+def _locks(request: Request) -> UploadLocks:
+    return request.app.state.upload_locks
 
 
 @router.post(
@@ -82,7 +88,26 @@ async def upload_chunk(
     Ukuran wajib tepat `chunk_size` (chunk terakhir = sisa). Header `X-Chunk-SHA256` opsional
     tetapi disarankan agar kerusakan di jaringan terdeteksi.
     """
-    upload = upload_service.get_owned_upload(db, user.id, upload_id)
+    # Cek kepemilikan dulu (404 untuk upload orang lain) sebelum mengambil kunci.
+    await run_in_threadpool(upload_service.get_owned_upload, db, user.id, upload_id)
+    async with _locks(request).shared(upload_id):
+        return await _write_chunk(upload_id, chunk_index, request, user.id, db, settings, storage, x_chunk_sha256)
+
+
+async def _write_chunk(  # noqa: PLR0913
+    upload_id: str,
+    chunk_index: int,
+    request: Request,
+    user_id: int,
+    db: DbSession,
+    settings: SettingsDep,
+    storage: StorageDep,
+    x_chunk_sha256: str | None,
+) -> ChunkResult:
+    # Dibaca ulang DI DALAM kunci: status bisa saja berubah (cancel/complete) sejak request masuk.
+    # Akses SQLite di threadpool agar event loop tidak ikut tertahan bila DB sibuk.
+    upload = await run_in_threadpool(upload_service.get_owned_upload, db, user_id, upload_id)
+    await run_in_threadpool(db.refresh, upload)
     upload_service.ensure_writable(upload)
     if chunk_index >= upload.total_chunks:
         raise unprocessable("invalid_chunk_index", f"chunk_index harus 0-{upload.total_chunks - 1}")
@@ -99,7 +124,11 @@ async def upload_chunk(
     head = b""
     offset = chunk_index * upload.chunk_size
     received = 0
-    fd = os.open(storage.resolve(upload.temp_path), os.O_WRONLY)
+    try:
+        fd = os.open(storage.resolve(upload.temp_path), os.O_WRONLY)
+    except FileNotFoundError as exc:
+        # Data sementara sudah dihapus (upload gagal/dibatalkan oleh request lain).
+        raise AppError(409, "upload_not_active", "Upload sudah tidak aktif") from exc
     try:
         try:
             async for piece in request.stream():
@@ -130,12 +159,12 @@ async def upload_chunk(
         try:
             decide_mime(upload.filename, head)
         except MimeMismatch as exc:
-            upload_service.mark_failed(db, storage, registry, upload, "mime_mismatch")
+            await run_in_threadpool(upload_service.mark_failed, db, storage, registry, upload, "mime_mismatch")
             raise AppError(415, "mime_mismatch", "Isi file tidak sesuai dengan ekstensinya") from exc
 
-    same = upload_service.record_chunk(db, settings, upload, chunk_index, expected, digest)
+    same = await run_in_threadpool(upload_service.record_chunk, db, settings, upload, chunk_index, expected, digest)
     registry.commit_chunk(upload.id, chunk_index, running, same_as_before=same)
-    count = len(upload_service.received_indices(db, upload.id))
+    count = len(await run_in_threadpool(upload_service.received_indices, db, upload.id))
     return ChunkResult(
         upload_id=upload.id,
         chunk_index=chunk_index,
@@ -160,22 +189,34 @@ def upload_status(upload_id: str, user: CurrentUser, db: DbSession) -> UploadOut
     responses={409: {"description": "Chunk belum lengkap"}, 415: {"description": "Jenis file ditolak"},
                422: {"description": "Checksum tidak cocok"}},
 )
-def complete_upload(
+async def complete_upload(
     upload_id: str, request: Request, user: CurrentUser, db: DbSession,
     settings: SettingsDep, storage: StorageDep,
 ) -> UploadCompleteOut:
-    upload = upload_service.get_owned_upload(db, user.id, upload_id)
+    """Verifikasi & simpan file. Menunggu chunk yang masih ditulis; chunk sesudahnya ditolak."""
+    upload = await run_in_threadpool(upload_service.get_owned_upload, db, user.id, upload_id)
     if upload.status == UploadStatus.COMPLETED.value and upload.file_id:
         raise AppError(409, "upload_already_completed", "Upload sudah selesai")
-    stored = upload_service.complete_upload(
-        db, settings, storage, _registry(request), user, upload, client_info(request)
+    async with _locks(request).exclusive(upload_id):
+        await run_in_threadpool(upload_service.claim_upload, db, upload)
+    # Proses berat (hash ulang dari disk bila perlu) berjalan tanpa memegang kunci:
+    # status 'processing' sudah membuat chunk baru ditolak.
+    stored = await run_in_threadpool(
+        upload_service.finish_claimed_upload, db, settings, storage, _registry(request), user, upload,
+        client_info(request),
     )
-    upload = upload_service.get_owned_upload(db, user.id, upload_id)
-    return UploadCompleteOut(upload=upload_service.to_out(db, upload), file=FileOut.from_model(stored))
+    upload = await run_in_threadpool(upload_service.get_owned_upload, db, user.id, upload_id)
+    out = await run_in_threadpool(upload_service.to_out, db, upload)
+    return UploadCompleteOut(upload=out, file=FileOut.from_model(stored))
 
 
 @router.post("/{upload_id}/cancel", response_model=UploadOut)
-def cancel_upload(upload_id: str, request: Request, user: CurrentUser, db: DbSession, storage: StorageDep) -> UploadOut:
-    upload = upload_service.get_owned_upload(db, user.id, upload_id)
-    upload = upload_service.cancel_upload(db, storage, _registry(request), user, upload, client_info(request))
-    return upload_service.to_out(db, upload)
+async def cancel_upload(
+    upload_id: str, request: Request, user: CurrentUser, db: DbSession, storage: StorageDep
+) -> UploadOut:
+    upload = await run_in_threadpool(upload_service.get_owned_upload, db, user.id, upload_id)
+    async with _locks(request).exclusive(upload_id):  # tunggu chunk yang sedang ditulis
+        upload = await run_in_threadpool(
+            upload_service.cancel_upload, db, storage, _registry(request), user, upload, client_info(request)
+        )
+    return await run_in_threadpool(upload_service.to_out, db, upload)

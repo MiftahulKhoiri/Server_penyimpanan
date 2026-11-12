@@ -69,12 +69,19 @@ class Settings(BaseSettings):
     DATABASE_PATH: Path = Path("/mnt/ssd/database/server.db")
     PRIMARY_MOUNT_POINT: Path = Path("/mnt/ssd")
     BACKUP_MOUNT_POINT: Path = Path("/mnt/hdd")
+    # Jumlah thread pekerja untuk operasi blocking (disk/SQLite). Default anyio 40 terlalu
+    # banyak untuk Pi 3 (4 core, 1 GB): tiap thread menambah fragmentasi memori.
+    THREADPOOL_SIZE: int = Field(16, ge=2, le=100)
+
     # Jika True, server menolak menulis bila SSD/HDD tidak benar-benar ter-mount.
     # Hanya boleh False untuk pengembangan/testing.
     REQUIRE_MOUNTED_STORAGE: bool = True
 
     # --- Database ---
     AUTO_MIGRATE: bool = True
+
+    # --- Batas body request untuk endpoint non-upload (JSON). Upload punya batasnya sendiri.
+    MAX_REQUEST_BODY_BYTES: int = Field(1024 * 1024, ge=1024, le=64 * 1024 * 1024)
 
     # --- Upload ---
     MAX_UPLOAD_SIZE_BYTES: int = Field(64 * 1024**3, ge=1)  # batas per file (chunked)

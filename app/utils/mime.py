@@ -52,6 +52,16 @@ _FTYP_BRANDS = {
 }
 
 
+_MP3_FRAME_SYNC = (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")
+_GENERIC = {"application/octet-stream", None}
+
+
+def is_weak_signature(head: bytes) -> bool:
+    """Tanda tangan 2 byte (MP3 frame sync tanpa ID3, gzip) cukup sering muncul secara kebetulan
+    di data biner/acak (±1 dari 20.000 file). Tidak boleh dipakai untuk MENOLAK file."""
+    return head[:2] in _MP3_FRAME_SYNC or head.startswith(b"\x1f\x8b")
+
+
 def sniff_mime(head: bytes) -> str | None:
     if head.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
@@ -83,7 +93,7 @@ def sniff_mime(head: bytes) -> str | None:
         return "application/vnd.rar"
     if head.startswith(b"\x1f\x8b"):
         return "application/gzip"
-    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+    if head.startswith(b"ID3") or head[:2] in _MP3_FRAME_SYNC:
         return "audio/mpeg"
     if head.startswith(b"OggS"):
         return "audio/ogg"
@@ -92,8 +102,14 @@ def sniff_mime(head: bytes) -> str | None:
     return None
 
 
+_ENCODING_TYPES = {"gzip": "application/gzip", "bzip2": "application/x-bzip2", "xz": "application/x-xz"}
+
+
 def mime_from_extension(name: str) -> str | None:
-    guessed, _ = mimetypes.guess_type(name, strict=False)
+    guessed, encoding = mimetypes.guess_type(name, strict=False)
+    if encoding in _ENCODING_TYPES:
+        # .gz/.tar.gz dilaporkan Python sebagai "encoding", padahal isinya arsip terkompresi.
+        return _ENCODING_TYPES[encoding]
     return guessed
 
 
@@ -133,6 +149,14 @@ def decide_mime(name: str, head: bytes) -> MimeDecision:
     (mis. 'foto.jpg' tetapi isinya PDF/ZIP)."""
     claimed = mime_from_extension(name)
     detected = sniff_mime(head)
+    if claimed is None or claimed in _GENERIC:
+        # Ekstensi tidak menyatakan jenis apa pun (.bin, tanpa ekstensi): tidak ada yang bisa
+        # "tidak cocok". Pakai hasil deteksi bila tanda tangannya kuat.
+        if detected and not is_weak_signature(head):
+            return MimeDecision(mime_type=detected, media_type=media_type_for(detected))
+        return MimeDecision(mime_type="application/octet-stream", media_type=media_type_for("application/octet-stream"))
+    if detected and is_weak_signature(head) and _family(claimed) != _family(detected):
+        detected = None  # kebetulan semata: percayai ekstensi
     if claimed and detected and _family(claimed) != _family(detected):
         raise MimeMismatch(claimed, detected)
     if detected:

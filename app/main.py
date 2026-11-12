@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.v1.router import api_router
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -30,6 +31,7 @@ from app import __version__ as _version
 from app.services import trash_service
 from app.services.activity_service import log_activity
 from app.services.backup_service import BackupManager, mark_interrupted_jobs, maybe_start_auto_backup
+from app.services.upload_locks import UploadLocks
 from app.services.upload_service import UploadHashRegistry, cleanup_uploads
 
 logger = logging.getLogger("server_penyimpanan")
@@ -97,6 +99,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        import anyio.to_thread
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = app.state.settings.THREADPOOL_SIZE
         await run_in_threadpool(_on_startup, app)
         task = None
         interval = app.state.settings.UPLOAD_CLEANUP_INTERVAL_SECONDS
@@ -128,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.security = SecurityService(settings)
     app.state.backup_manager = BackupManager(app.state.database, settings)
     app.state.upload_hashes = UploadHashRegistry()
+    app.state.upload_locks = UploadLocks()
     app.state.started_monotonic = time.monotonic()
     prime_cpu_counter()
     app.state.login_limiter = LoginRateLimiter(
@@ -155,6 +161,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    # Ditambahkan terakhir = lapisan terluar: menolak body raksasa sebelum dibaca aplikasi.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
     register_exception_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
     return app

@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
+from app.api.v1.files import FILE_SECURITY_HEADERS
 from app.core.errors import AppError
 from app.models import MediaType
 from app.schemas.files import FileList, FileOut, SortField, SortOrder
@@ -94,7 +95,7 @@ def stream_media(file_id: str, request: Request, user: CurrentUser, db: DbSessio
         media_type=row.mime_type,
         filename=row.name,
         content_disposition_type="inline",
-        headers={"Cache-Control": "private, no-cache"},
+        headers={"Cache-Control": "private, no-cache", **FILE_SECURITY_HEADERS},
     )
 
 
