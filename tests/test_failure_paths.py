@@ -105,7 +105,8 @@ def test_copy_failure_cleans_up(lenient_user, monkeypatch):
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(file_service.shutil, "copyfile", broken_copy)
-    assert c.post(f"/api/v1/files/{fid}/copy", headers=h, json={}).status_code == 500
+    # Disk penuh kini dilaporkan sebagai 507 (dulu 500 generik); pembersihan tetap sama.
+    assert c.post(f"/api/v1/files/{fid}/copy", headers=h, json={}).status_code == 507
     assert _files_on_disk(c) == before
     assert not list((storage_root(c) / ".tmp" / "copy").iterdir())
     assert c.get("/api/v1/files", headers=h).json()["total"] == 1

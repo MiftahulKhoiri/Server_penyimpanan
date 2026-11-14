@@ -16,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app import __version__ as _version
 from app.api import openapi_meta
 from app.api.v1.router import api_router
 from app.core.body_limit import BodySizeLimitMiddleware
@@ -25,15 +26,23 @@ from app.core.logging import configure_logging
 from app.core.rate_limit import LoginRateLimiter
 from app.core.security import SecurityService
 from app.database.session import Database
-from app.services.storage_guard import check_location
-from app.services.system_service import prime_cpu_counter
-from app.services.storage_paths import StoragePaths
-from app import __version__ as _version
 from app.services import trash_service
 from app.services.activity_service import log_activity
-from app.services.backup_service import BackupManager, mark_interrupted_jobs, maybe_start_auto_backup
+from app.services.backup_pin import drain_pending
+from app.services.backup_service import (
+    BackupManager,
+    mark_interrupted_jobs,
+    maybe_start_auto_backup,
+)
+from app.services.storage_guard import check_location
+from app.services.storage_paths import StoragePaths
+from app.services.system_service import prime_cpu_counter
 from app.services.upload_locks import UploadLocks
-from app.services.upload_service import UploadHashRegistry, cleanup_uploads
+from app.services.upload_service import (
+    UploadHashRegistry,
+    cleanup_uploads,
+    recover_interrupted_uploads,
+)
 
 logger = logging.getLogger("server_penyimpanan")
 
@@ -52,8 +61,13 @@ def run_maintenance_once(app: FastAPI) -> dict[str, int] | None:
     storage = StoragePaths(settings.PRIMARY_STORAGE_PATH)
     storage.ensure_layout()
     with database.session() as db:
+        if not app.state.uploads_recovered and database.holds_instance_lock:
+            # Database baru siap setelah startup (mis. SSD terlambat ter-mount): pulihkan sekarang.
+            recover_interrupted_uploads(db)
+            app.state.uploads_recovered = True
         stats = cleanup_uploads(db, storage, app.state.upload_hashes)
         stats["trash_purged"] = trash_service.purge_expired(db, storage)
+        stats["pending_deletes_removed"] = drain_pending(storage.root)
         stats["auto_backup_started"] = int(
             maybe_start_auto_backup(db, settings, app.state.backup_manager) is not None
         )
@@ -70,6 +84,9 @@ def _on_startup(app: FastAPI) -> None:
     settings: Settings = app.state.settings
     with database.session() as db:
         interrupted = mark_interrupted_jobs(db)
+        # Hanya aman bila proses ini satu-satunya pemakai database (kunci instance dipegang).
+        recovered = recover_interrupted_uploads(db) if database.holds_instance_lock else 0
+        app.state.uploads_recovered = database.holds_instance_lock
         log_activity(
             db, "system.start",
             details={
@@ -79,6 +96,7 @@ def _on_startup(app: FastAPI) -> None:
                 "backup_auto_interval_hours": settings.BACKUP_AUTO_INTERVAL_HOURS,
                 "trash_retention_days": settings.TRASH_RETENTION_DAYS,
                 "interrupted_backups": interrupted,
+                "recovered_uploads": recovered,
             },
         )
         db.commit()
@@ -134,11 +152,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
-    app.state.database = Database(settings)
+    app.state.database = Database(settings, exclusive=settings.SINGLE_INSTANCE_LOCK)
     app.state.security = SecurityService(settings)
     app.state.backup_manager = BackupManager(app.state.database, settings)
     app.state.upload_hashes = UploadHashRegistry()
     app.state.upload_locks = UploadLocks()
+    app.state.uploads_recovered = False
     app.state.started_monotonic = time.monotonic()
     prime_cpu_counter()
     app.state.login_limiter = LoginRateLimiter(

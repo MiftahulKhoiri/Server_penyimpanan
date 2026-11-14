@@ -6,6 +6,7 @@ Format respons error seragam untuk aplikasi Android:
 
 from __future__ import annotations
 
+import errno
 import logging
 
 from fastapi import FastAPI, Request, status
@@ -101,6 +102,20 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content=_error_body("database_error", "Database sedang bermasalah, coba lagi nanti"),
             headers={"Retry-After": "30"},
+        )
+
+    @app.exception_handler(OSError)
+    async def _os_error(_: Request, exc: OSError) -> JSONResponse:
+        if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+            logger.error("Penyimpanan penuh: %s", exc.__class__.__name__)
+            return JSONResponse(
+                status_code=507,
+                content=_error_body("insufficient_storage", "Ruang penyimpanan server penuh"),
+            )
+        logger.error("I/O error: %s (errno %s)", exc.__class__.__name__, exc.errno, exc_info=exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=_error_body("internal_error", "Terjadi kesalahan pada server"),
         )
 
     @app.exception_handler(Exception)

@@ -16,14 +16,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pydantic import ValidationError  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from pydantic import ValidationError
+from sqlalchemy import select
 
-from app.core.config import get_settings  # noqa: E402
-from app.database.session import Database  # noqa: E402
-from app.database.types import utcnow  # noqa: E402
-from app.models import BackupJob, BackupStatus  # noqa: E402
-from app.services.backup_service import backup_location_ok, run_backup  # noqa: E402
+from app.core.config import get_settings
+from app.database.session import Database
+from app.database.types import utcnow
+from app.models import BackupJob, BackupStatus
+from app.services.backup_service import backup_location_ok, run_backup
 
 
 def main() -> int:
@@ -68,6 +68,8 @@ def main() -> int:
     if job.error_message:
         print(f"Error       : {job.error_message}")
     report = json.loads(job.report or "{}")
+    if report.get("set_id"):
+        print(f"Set backup  : {report['set_id']} ({report.get('set_status')})")
     if report.get("database_backup"):
         print(f"Database    : {report['database_backup']['file']} (integrity {report['database_backup']['integrity']})")
     for failure in report.get("failures", [])[:20]:

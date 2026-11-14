@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session, aliased
@@ -12,8 +11,9 @@ from app.core.errors import not_found
 from app.database.types import utcnow
 from app.models import Folder, StoredFile, TrashItem, User
 from app.services.activity_service import log_activity
+from app.services.backup_pin import discard_files
 from app.services.file_service import unique_name
-from app.services.storage_paths import StoragePaths, UnsafePathError
+from app.services.storage_paths import StoragePaths
 from app.utils.request_info import ClientInfo
 
 logger = logging.getLogger("server_penyimpanan.trash")
@@ -114,17 +114,9 @@ def restore(db: Session, user: User, item: TrashItem, client: ClientInfo) -> dic
 
 
 def _unlink_all(storage: StoragePaths, relpaths: list[str]) -> int:
-    removed = 0
-    for rel in relpaths:
-        try:
-            path: Path = storage.resolve(rel)
-            path.unlink(missing_ok=True)
-            removed += 1
-        except UnsafePathError:
-            logger.error("Path tidak aman saat purge: %s", rel)
-        except OSError as exc:
-            logger.warning("Gagal menghapus data fisik (%s): %s", rel, exc.__class__.__name__)
-    return removed
+    # Ditunda (dipindah ke .pending-delete/) bila backup sedang berjalan, agar snapshot
+    # database backup tidak menunjuk ke file yang sudah hilang.
+    return discard_files(storage, relpaths)
 
 
 def purge_item(

@@ -9,12 +9,12 @@ import pytest
 
 warnings.filterwarnings("ignore", message=".*httpx2.*")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from app.core.config import Settings  # noqa: E402
-from app.core.security import SecurityService  # noqa: E402
-from app.main import create_app  # noqa: E402
-from app.models import Role, User  # noqa: E402
+from app.core.config import Settings
+from app.core.security import SecurityService
+from app.main import create_app
+from app.models import Role, User
 
 TEST_SECRET = "test-secret-key-yang-panjang-dan-acak-0123456789"
 DEFAULT_PASSWORD = "Rahasia123"
@@ -37,6 +37,9 @@ def make_settings(base: Path, **overrides: Any) -> Settings:
         "UPLOAD_CLEANUP_INTERVAL_SECONDS": 0,
         "MIN_FREE_SPACE_BYTES": 0,
         "UPLOAD_CHUNK_SIZE_MIN": 1024,
+        # Beberapa tes sengaja menjalankan dua app pada database yang sama ("restart").
+        # Kunci instance diuji tersendiri di test_upload_concurrency.py.
+        "SINGLE_INSTANCE_LOCK": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]

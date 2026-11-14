@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import NoReturn
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -169,22 +170,30 @@ def rotate_refresh_token(
     Jika token yang sudah dirotasi/dicabut dipakai lagi, seluruh sesi
     (family) dicabut karena kemungkinan token dicuri.
     """
-    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw_refresh)))
-    if row is None:
-        raise unauthorized("refresh_token_invalid", "Refresh token tidak valid")
+    token_hash = hash_token(raw_refresh)
     now = utcnow()
-    if row.revoked_at is not None:
-        if row.revoked_reason == "rotated":
-            revoke_family(db, row.family_id, "reuse_detected")
-            db.commit()
-            raise RefreshReuseDetected(
-                401, "refresh_token_reused", "Refresh token sudah dipakai; sesi dicabut demi keamanan",
-                {"WWW-Authenticate": "Bearer"},
-            )
-        raise unauthorized("session_revoked", "Sesi sudah berakhir, silakan login ulang")
-    if row.expires_at <= now:
-        raise unauthorized("refresh_token_expired", "Refresh token kedaluwarsa, silakan login ulang")
+    # Klaim token secara ATOMIK sebelum menerbitkan token baru: UPDATE bersyarat hanya berhasil
+    # untuk satu request. Request bersamaan dengan token yang sama melihat rowcount 0 dan
+    # diperlakukan sebagai pemakaian ulang. Statement pertama transaksi adalah tulis, jadi
+    # SQLite langsung mengambil kunci tulis (menunggu busy_timeout) dan tidak ada
+    # SQLITE_BUSY_SNAPSHOT akibat upgrade baca->tulis.
+    claimed = db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .values(revoked_at=now, revoked_reason="rotated", last_used_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    if getattr(claimed, "rowcount", 0) != 1:
+        db.rollback()
+        _reject_unclaimed(db, row, now)
 
+    assert row is not None
+    db.refresh(row)
     user = db.get(User, row.user_id)
     if user is None or not user.is_active:
         revoke_family(db, row.family_id, "user_inactive")
@@ -196,17 +205,33 @@ def rotate_refresh_token(
     )
     # Sesi tetap memakai masa berlaku awal (tidak diperpanjang tanpa batas):
     new_row.expires_at = row.expires_at
-    tokens = IssuedTokens(
+    row.replaced_by_id = new_row.id
+    return IssuedTokens(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
         expires_in=tokens.expires_in,
         refresh_expires_in=max(int((row.expires_at - now).total_seconds()), 0),
         session_id=tokens.session_id,
     )
-    row.revoked_at = now
-    row.revoked_reason = "rotated"
-    row.replaced_by_id = new_row.id
-    return tokens
+
+
+def _reject_unclaimed(db: Session, row: RefreshToken | None, now: datetime) -> NoReturn:
+    """Token tidak bisa diklaim: tidak dikenal, kedaluwarsa, dicabut, atau dipakai ulang."""
+    if row is None:
+        raise unauthorized("refresh_token_invalid", "Refresh token tidak valid")
+    db.refresh(row)
+    if row.revoked_at is None and row.expires_at <= now:
+        raise unauthorized("refresh_token_expired", "Refresh token kedaluwarsa, silakan login ulang")
+    if row.revoked_reason in ("rotated", "reuse_detected"):
+        # Token yang sudah dirotasi dipakai lagi (termasuk request bersamaan yang kalah):
+        # anggap dicuri, cabut seluruh sesi (family).
+        revoke_family(db, row.family_id, "reuse_detected")
+        db.commit()
+        raise RefreshReuseDetected(
+            401, "refresh_token_reused", "Refresh token sudah dipakai; sesi dicabut demi keamanan",
+            {"WWW-Authenticate": "Bearer"},
+        )
+    raise unauthorized("session_revoked", "Sesi sudah berakhir, silakan login ulang")
 
 
 def active_session_exists(db: Session, user_id: int, family_id: str) -> bool:

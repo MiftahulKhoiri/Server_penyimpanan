@@ -79,6 +79,9 @@ class Settings(BaseSettings):
 
     # --- Database ---
     AUTO_MIGRATE: bool = True
+    # Tolak proses server kedua pada database yang sama (kunci upload & rate limiter ada
+    # di memori proses, jadi hanya 1 worker yang aman). Matikan hanya untuk pengujian.
+    SINGLE_INSTANCE_LOCK: bool = True
 
     # --- Batas body request untuk endpoint non-upload (JSON). Upload punya batasnya sendiri.
     MAX_REQUEST_BODY_BYTES: int = Field(1024 * 1024, ge=1024, le=64 * 1024 * 1024)
@@ -105,7 +108,9 @@ class Settings(BaseSettings):
     # --- Backup ke HDD ---
     # 0 = backup otomatis mati (default). Backup tidak pernah menghapus file asli.
     BACKUP_AUTO_INTERVAL_HOURS: int = Field(0, ge=0, le=24 * 30)
-    # Jumlah salinan database yang disimpan di HDD. 0 = simpan semua (tidak ada yang dihapus).
+    # Jumlah SET backup lengkap (status completed: snapshot DB + manifest) yang disimpan di HDD.
+    # Set lama hanya dihapus SETELAH set baru selesai & terverifikasi. 0 = simpan semua.
+    # Isi file di BACKUP_STORAGE_PATH/files tidak pernah dihapus oleh retensi.
     BACKUP_DB_KEEP: int = Field(0, ge=0, le=1000)
     BACKUP_MIN_FREE_SPACE_BYTES: int = Field(1024**3, ge=0)
 

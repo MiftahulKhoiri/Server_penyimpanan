@@ -4,7 +4,7 @@
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m pytest                     # 197 tes otomatis (±40 detik)
+.venv/bin/python -m pytest                     # 233 tes otomatis (±80 detik di Pi 5)
 .venv/bin/python -m pytest --cov=app           # dengan laporan coverage
 tests/deploy/run_e2e.sh                        # uji deployment end-to-end (Docker, ±8 menit)
 python tests/load/load_test.py --base http://127.0.0.1:8000 --password <admin> --pid <pid>
@@ -58,6 +58,12 @@ SHA-256 hasil download.
 | File HTML/SVG pengguna bisa dieksekusi di origin server | audit kode | `test_hardening.py::test_user_files_served_with_sandbox_csp` |
 | Chunk terlambat menghidupkan lagi upload yang gagal/dibatalkan, dan bisa menulis setelah checksum dihitung | uji beban | `test_upload_races.py` |
 | File biner acak ditolak karena kebetulan mirip tanda tangan MP3 (2 byte) | uji beban | `test_upload_races.py::test_weak_signatures_*` |
+| Backup DB & file tidak konsisten (purge di tengah backup), backup gagal tetap memicu retensi yang menghapus salinan lama, backup sebagian dinyatakan "partial" | audit (Nov 2026) | `test_backup_consistency.py` (14 tes: manifest, file hilang/berubah, disk penuh, snapshot rusak, staging terputus, proses ganda, restore valid/tidak valid) |
+| Rate limiter login: jumlah key tidak benar-benar dibatasi saat semua key aktif | audit (Nov 2026) | `test_rate_limit.py` (ribuan username unik, banjir vs akun target, RAM, konkurensi, IPv6 /64) |
+| Dua refresh bersamaan dengan token yang sama sama-sama berhasil (4 dari 4) | audit (Nov 2026) | `test_refresh_race.py` |
+| Pembersihan berkala mengedaluwarsakan upload yang sedang difinalisasi (`processing`) dan menghapus datanya; upload `processing` macet setelah crash | audit (Nov 2026) | `test_upload_concurrency.py::test_expiry_does_not_touch_upload_being_finalized`, `test_processing_upload_recovered_after_crash` |
+| Disk penuh saat upload menghasilkan HTTP 500 | audit (Nov 2026) | `test_upload_concurrency.py::test_disk_full_*` |
+| Dua proses server pada DB yang sama (kunci upload in-memory tidak berlaku lintas proses) | audit (Nov 2026) | `test_upload_concurrency.py::test_second_server_instance_refused` |
 | RSS membengkak karena fragmentasi malloc antar-thread (321 MB) | uji beban | `MALLOC_ARENA_MAX=2` + `THREADPOOL_SIZE` (243 MB puncak) |
 | Pencarian admin tidak meng-escape `%`/`_` | coverage | `test_failure_paths.py::test_admin_search_escapes_wildcards` |
 | `operationId` duplikat & acak pada endpoint dua method (generator client bingung) | openapi-generator | `test_docs.py::test_operation_ids_unique_and_stable` |

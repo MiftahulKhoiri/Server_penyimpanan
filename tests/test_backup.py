@@ -11,7 +11,13 @@ from app.database.types import utcnow
 from app.main import run_maintenance_once
 from app.models import ActivityLog, BackupJob, StoredFile
 from app.services import backup_service, storage_guard, storage_service
-from tests.conftest import auth_header, create_user_direct, login, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+    upload_simple,
+)
 
 API = "/api/v1/storage/backup"
 
@@ -51,7 +57,9 @@ def test_backup_copies_and_verifies(client):
         assert src.exists()  # file asli tidak tersentuh
     db_backup = job["report"]["database_backup"]
     assert db_backup["integrity"] == "ok"
-    copy = _backup_root(client) / "database" / db_backup["file"]
+    # Format baru: snapshot DB berada di dalam set backup yang sudah final.
+    assert job["report"]["set_status"] == "completed"
+    copy = _backup_root(client) / "sets" / job["report"]["set_id"] / db_backup["file"]
     assert hashlib.sha256(copy.read_bytes()).hexdigest() == db_backup["sha256"]
     con = sqlite3.connect(copy)
     assert con.execute("SELECT count(*) FROM files").fetchone()[0] == 5
@@ -90,7 +98,11 @@ def test_source_corruption_detected(client):
     src, dst = _paths(client, bad)
     src.write_bytes(b"Z" * 1000)  # bit rot / kerusakan di SSD, ukuran sama
     job = _run(client, h)
-    assert job["status"] == "partial" and job["files_failed"] == 1 and job["files_copied"] == 1
+    # Set tidak lengkap tidak boleh dinyatakan berhasil (dulu: "partial").
+    assert job["status"] == "failed" and job["error_message"] == "required_files_failed"
+    assert job["files_failed"] == 1 and job["files_copied"] == 1
+    assert job["report"]["set_status"] == "failed"
+    assert not list((_backup_root(client) / "sets").glob("2*"))  # tidak ada set final
     assert job["report"]["failures"] == [{"file_id": bad, "reason": "source_checksum_mismatch"}]
     assert not dst.exists()  # salinan rusak tidak pernah ditulis
     assert _paths(client, good)[1].exists()
@@ -115,7 +127,7 @@ def test_backup_requires_admin_and_hdd(client, monkeypatch):
     assert client.post(API, headers=auth_header(login(client, "budi"))).status_code == 403
     settings = client.app.state.settings
     ssd = str(settings.PRIMARY_MOUNT_POINT)
-    fake = lambda p: str(p) == ssd  # noqa: E731  SSD ter-mount, HDD tidak
+    fake = lambda p: str(p) == ssd
     monkeypatch.setattr(storage_guard.os.path, "ismount", fake)
     monkeypatch.setattr(storage_service.os.path, "ismount", fake)
     settings.REQUIRE_MOUNTED_STORAGE = True
@@ -161,8 +173,9 @@ def test_database_backup_rotation(make_client):
     c = make_client(BACKUP_DB_KEEP=2)
     h = _setup(c)
     for _ in range(3):
-        _run(c, h)
-    assert len(list((_backup_root(c) / "database").glob("server-*.db"))) == 2
+        assert _run(c, h)["status"] == "completed"
+    # Retensi kini berlaku per set backup lengkap (snapshot DB + manifest).
+    assert len(backup_service.completed_sets(_backup_root(c))) == 2
 
 
 def test_auto_backup_only_when_configured(make_client):

@@ -443,6 +443,22 @@ def cancel_upload(
     return upload
 
 
+# ---------------- Pemulihan saat start ----------------
+def recover_interrupted_uploads(db: Session) -> int:
+    """Upload yang tertinggal di status 'processing' saat server start berarti finalisasinya
+    terputus (crash/listrik padam). Kembalikan ke 'uploading' agar klien bisa memanggil
+    complete lagi; checksum akan dihitung ulang dari disk. Hanya aman dipanggil saat startup
+    proses tunggal (lihat kunci instance di Database)."""
+    result = db.execute(
+        update(Upload)
+        .where(Upload.status == UploadStatus.PROCESSING.value)
+        .values(status=UploadStatus.UPLOADING.value, updated_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return getattr(result, "rowcount", 0) or 0
+
+
 # ---------------- Pembersihan ----------------
 ORPHAN_GRACE_SECONDS = 3600
 TEMP_FILE_MAX_AGE_SECONDS = 6 * 3600
@@ -454,17 +470,27 @@ def cleanup_uploads(db: Session, storage: StoragePaths, registry: UploadHashRegi
     now = utcnow()
     stats = {"expired": 0, "orphan_dirs": 0, "temp_files": 0, "rows_deleted": 0}
 
-    expired = db.scalars(
-        select(Upload).where(Upload.status.in_(file_service.ACTIVE_UPLOAD_STATUSES), Upload.expires_at <= now)
+    # Hanya upload yang masih bisa ditulis (pending/uploading) yang boleh kedaluwarsa.
+    # Upload 'processing' sedang difinalisasi oleh request complete: menghapus direktorinya
+    # di tengah jalan akan menggagalkan/merusak finalisasi. UPDATE bersyarat per baris
+    # memastikan chunk yang baru saja memperpanjang expires_at tidak ikut dikedaluwarsakan.
+    candidates = db.scalars(
+        select(Upload.id).where(Upload.status.in_(WRITABLE), Upload.expires_at <= now)
     ).all()
-    for upload in expired:
-        upload.status = UploadStatus.EXPIRED.value
-        upload.error_message = "expired"
-        _remove_upload_dir(storage, upload.id)
-        if registry:
-            registry.discard(upload.id)
-        stats["expired"] += 1
     db.commit()
+    for upload_id in candidates:
+        result = db.execute(
+            update(Upload)
+            .where(Upload.id == upload_id, Upload.status.in_(WRITABLE), Upload.expires_at <= now)
+            .values(status=UploadStatus.EXPIRED.value, error_message="expired", updated_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+        if getattr(result, "rowcount", 0) == 1:
+            _remove_upload_dir(storage, upload_id)
+            if registry:
+                registry.discard(upload_id)
+            stats["expired"] += 1
 
     active_ids = set(
         db.scalars(select(Upload.id).where(Upload.status.in_(file_service.ACTIVE_UPLOAD_STATUSES))).all()

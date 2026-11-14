@@ -7,7 +7,9 @@ lagi secara berkala tanpa pernah membuat file DB di root filesystem.
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -46,8 +48,18 @@ def make_engine(db_path: Path) -> Engine:
 
 
 class Database:
-    def __init__(self, settings: Settings) -> None:
+    """exclusive=True: proses server memegang flock di samping file DB selama hidup.
+
+    Kunci upload, registry hash, dan rate limiter berada di memori proses; menjalankan
+    dua proses server (mis. uvicorn --workers 2) pada database yang sama tidak aman.
+    Proses kedua tidak akan menginisialisasi database (mode degraded, API 503) dan
+    mencatat error yang jelas. Skrip CLI (backup_now, init_db) memakai exclusive=False.
+    """
+
+    def __init__(self, settings: Settings, exclusive: bool = False) -> None:
         self.settings = settings
+        self.exclusive = exclusive
+        self._instance_fd: int | None = None
         self.engine: Engine | None = None
         self._sessionmaker: sessionmaker[Session] | None = None
         self.error: str | None = "not_initialized"
@@ -76,6 +88,12 @@ class Database:
             engine: Engine | None = None
             try:
                 s.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                if self.exclusive and not self._acquire_instance_lock():
+                    self.error = "another_instance_running"
+                    logger.error(
+                        "Proses server lain sudah memakai database %s; jalankan hanya 1 worker", s.DATABASE_PATH
+                    )
+                    return False
                 engine = make_engine(s.DATABASE_PATH)
                 if s.AUTO_MIGRATE:
                     migrate.upgrade_to_head(engine, s.DATABASE_PATH)
@@ -95,6 +113,23 @@ class Database:
             self.error = None
             logger.info("Database siap")
             return True
+
+    @property
+    def holds_instance_lock(self) -> bool:
+        return self._instance_fd is not None
+
+    def _acquire_instance_lock(self) -> bool:
+        if self._instance_fd is not None:
+            return True
+        path = self.settings.DATABASE_PATH.with_name(self.settings.DATABASE_PATH.name + ".instance.lock")
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return False
+        self._instance_fd = fd
+        return True
 
     def ensure_ready(self) -> bool:
         if self.ready:
@@ -126,3 +161,6 @@ class Database:
             self.engine = None
             self._sessionmaker = None
             self.error = "not_initialized"
+            if self._instance_fd is not None:
+                os.close(self._instance_fd)
+                self._instance_fd = None

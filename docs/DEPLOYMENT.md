@@ -122,7 +122,7 @@ Yang paling sering diubah:
 | `ALLOW_REGISTRATION` | false | true = siapa saja bisa daftar dari aplikasi |
 | `TRASH_RETENTION_DAYS` | 30 | Lama item disimpan di trash sebelum dihapus permanen |
 | `BACKUP_AUTO_INTERVAL_HOURS` | 0 (mati) | Mis. `24` untuk backup otomatis harian |
-| `BACKUP_DB_KEEP` | 0 (semua) | Jumlah salinan database yang disimpan di HDD |
+| `BACKUP_DB_KEEP` | 0 (semua) | Jumlah set backup `completed` yang disimpan di HDD |
 | `MAX_UPLOAD_SIZE_BYTES` | 64 GiB | Batas ukuran per file |
 | `ENABLE_DOCS` | true | false = matikan `/docs` |
 
@@ -173,8 +173,24 @@ sudo ./scripts/update.sh --no-pull
 ## 9. Backup
 
 **Isi backup** (`/mnt/hdd/backup`):
-- `files/...`: salinan setiap file dengan struktur yang sama seperti di SSD.
-- `database/server-<waktu>.db`: salinan database (dicek `integrity_check`).
+- `sets/<set_id>/`: satu **set backup** = `database.db` (snapshot database) + `manifest.json`
+  (ID set, waktu, status, SHA-256 database, daftar seluruh file beserta path relatif, ukuran,
+  SHA-256). Hanya set berstatus `completed` yang dianggap valid.
+- `sets/.staging-<set_id>/`: set yang sedang dibuat, gagal, atau terputus (listrik padam).
+  Tidak pernah dipakai untuk restore; dibersihkan otomatis saat backup berikutnya.
+- `files/...`: penyimpanan isi bersama antar-set (struktur sama seperti di SSD, inkremental).
+- `database/server-<waktu>.db`: salinan format lama (versi sebelum audit) — dibiarkan apa adanya.
+
+**Konsistensi:** backup memegang kunci "backup pin" sebelum mengambil snapshot database, lalu
+menyalin tepat file yang tercatat di snapshot itu. Selama backup berjalan, hapus permanen tidak
+langsung menghapus data fisik melainkan memindahkannya ke `/mnt/ssd/storage/.pending-delete/`
+(dikosongkan otomatis setelah backup selesai). Set hanya menjadi `completed` bila database
+lolos `integrity_check` + SHA-256 dan **semua** file lolos verifikasi SHA-256; set lalu
+difinalisasi dengan rename atomik. Backup yang gagal (file hilang, disk penuh, HDD terlepas,
+proses dihentikan) tidak pernah menghapus set lama.
+
+**Retensi:** `BACKUP_DB_KEEP=N` menyimpan N set `completed` terbaru. Set lama hanya dihapus setelah
+set baru selesai dan terverifikasi.
 
 **Cara menjalankan:**
 - Dari aplikasi/API (admin): `POST /api/v1/storage/backup`, lalu pantau `GET /api/v1/storage/backup/{id}`.
@@ -202,9 +218,10 @@ menghapus file.
 M=/opt/server_penyimpanan/scripts/manage.sh
 sudo systemctl stop server-penyimpanan
 
-sudo $M restore --list                          # daftar salinan database di HDD
+sudo $M restore --list                          # daftar set backup + statusnya
 sudo $M restore --files --verify                # simulasi: file hilang/rusak di SSD
 sudo $M restore --files --verify --apply        # pulihkan file dari HDD
+sudo $M restore --set latest                    # simulasi pemulihan satu set lengkap
 
 sudo systemctl start server-penyimpanan
 ```
@@ -212,10 +229,12 @@ sudo systemctl start server-penyimpanan
 **Database rusak atau hilang:**
 ```bash
 sudo systemctl stop server-penyimpanan
-sudo $M restore --database latest --apply       # atau nama file dari --list
-sudo $M restore --files --apply                 # pastikan file yang dirujuk tersedia
+sudo $M restore --set latest --apply            # database + file dari set completed terbaru
 sudo systemctl start server-penyimpanan
 ```
+`--set` memvalidasi seluruh set (SHA-256 + integrity database, SHA-256 setiap file) **sebelum**
+mengubah apa pun; set yang tidak valid ditolak tanpa menyentuh data produksi. Untuk database
+saja: `--database latest|SET_ID`. Salinan format lama hanya bisa dipakai dengan `--allow-legacy`.
 Database saat ini selalu disimpan dulu sebagai `server.db.before-restore-<waktu>.bak`.
 Catatan: file yang di-upload **setelah** salinan database itu dibuat tidak akan terdaftar
 (file fisiknya tetap ada di SSD).
@@ -224,7 +243,7 @@ Catatan: file yang di-upload **setelah** salinan database itu dibuat tidak akan 
 1. Format dan mount SSD baru di `/mnt/ssd` (bagian 3), dengan UUID baru di `/etc/fstab`.
 2. `sudo ./scripts/install_pi.sh` (membuat ulang direktori; database baru yang kosong juga dibuat).
 3. `sudo systemctl stop server-penyimpanan`
-4. `sudo $M restore --database latest --apply` lalu `sudo $M restore --files --apply`
+4. `sudo $M restore --set latest --apply`
 5. `sudo systemctl start server-penyimpanan`. Thumbnail dibuat ulang otomatis saat diminta.
 
 ## 11. Pemecahan masalah
@@ -233,6 +252,7 @@ Catatan: file yang di-upload **setelah** salinan database itu dibuat tidak akan 
 |---|---|
 | Health `503`, `primary_storage: unavailable` | SSD tidak ter-mount. `findmnt /mnt/ssd`, `sudo mount -a`, cek kabel/daya. Server pulih sendiri dalam beberapa detik setelah SSD tersedia. |
 | `backup_storage: unavailable` | HDD tidak ter-mount. Server utama tetap berjalan; backup ditolak sampai HDD kembali. |
+| Log `Proses server lain sudah memakai database`, API 503 `database_unavailable` | Ada dua proses server pada database yang sama (mis. `uvicorn --workers 2` atau server dijalankan manual saat layanan aktif). Kunci upload, hash upload berjalan, dan rate limiter login ada di memori proses, jadi hanya **1 worker** yang aman. Hentikan proses kedua; `run.py` selalu memakai 1 worker. |
 | SSD baru ter-mount setelah boot (USB lambat) | Tidak perlu tindakan: server mendeteksi SSD/HDD yang di-mount belakangan dalam ±5 detik tanpa restart. |
 | Layanan restart terus | `sudo journalctl -u server-penyimpanan -n 100`. Biasanya konfigurasi tidak valid (pesan jelas di log). |
 | `Konfigurasi tidak valid` | Periksa nilai di `server.env`, mis. `SECRET_KEY` minimal 32 karakter, path harus absolut dan berada di bawah mount point. |
