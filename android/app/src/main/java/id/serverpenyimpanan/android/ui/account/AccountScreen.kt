@@ -4,11 +4,18 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -18,13 +25,24 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PhonelinkErase
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,10 +63,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -57,6 +83,7 @@ import id.serverpenyimpanan.android.container
 import id.serverpenyimpanan.android.data.api.ActivityOut
 import id.serverpenyimpanan.android.data.api.ApiException
 import id.serverpenyimpanan.android.data.api.ChangePasswordRequest
+import id.serverpenyimpanan.android.data.api.MemoryInfo
 import id.serverpenyimpanan.android.data.api.SessionOut
 import id.serverpenyimpanan.android.data.api.StorageStatusOut
 import id.serverpenyimpanan.android.data.api.UserOut
@@ -80,12 +107,18 @@ class AccountViewModel(private val app: AppContainer) : ViewModel() {
     var storage by mutableStateOf<StorageStatusOut?>(null)
         private set
 
+    /** RAM server; hanya tersedia untuk admin (endpoint /system/status khusus admin). */
+    var memory by mutableStateOf<MemoryInfo?>(null)
+        private set
+
     init { refresh() }
 
     fun refresh() {
         viewModelScope.launch {
             me = try { Load.Ready(apiCall { app.client().api.me() }) } catch (e: ApiException) { Load.Failed(e) }
             storage = runCatching { apiCall { app.client().api.storageStatus() } }.getOrNull()
+            val isAdmin = (me as? Load.Ready)?.data?.isAdmin == true
+            memory = if (isAdmin) runCatching { apiCall { app.client().api.systemStatus() }.memory }.getOrNull() else null
         }
     }
 
@@ -133,7 +166,14 @@ fun AccountScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Akun") }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Pengaturan") },
+                actions = { IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Muat ulang") } },
+            )
+        },
+    ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             when (val me = vm.me) {
                 Load.Loading -> LoadingBox(Modifier.fillMaxWidth().padding(24.dp))
@@ -144,10 +184,12 @@ fun AccountScreen(
                     leadingContent = { Icon(Icons.Filled.Person, null) },
                 )
             }
-            vm.storage?.let { StorageCard(it) }
+
+            SectionTitle("Penyimpanan server")
+            ResourceCard(vm.storage, vm.memory, showRam = (vm.me as? Load.Ready)?.data?.isAdmin == true)
 
             SectionTitle("Backup otomatis galeri")
-            SwitchRow("Backup foto ke server", "Foto baru diunggah otomatis ke folder \"${backup.folderName}\"", backup.enabled) { on ->
+            SwitchRow(Icons.Filled.Backup, "Backup foto ke server", "Foto baru diunggah otomatis ke folder \"${backup.folderName}\"", backup.enabled) { on ->
                 if (on && !AutoBackupWorker.hasMediaPermission(context, backup.includeVideos)) {
                     permLauncher.launch(buildPerms(backup.includeVideos))
                 } else {
@@ -156,20 +198,21 @@ fun AccountScreen(
                 }
             }
             if (backup.enabled) {
-                SwitchRow("Sertakan video", null, backup.includeVideos) { on ->
+                SwitchRow(Icons.Filled.Videocam, "Sertakan video", null, backup.includeVideos) { on ->
                     if (on && !AutoBackupWorker.hasMediaPermission(context, true)) {
                         permLauncher.launch(buildPerms(true))
                     } else {
                         vm.updateBackup(backup.copy(includeVideos = on))
                     }
                 }
-                SwitchRow("Hanya lewat Wi-Fi", null, backup.wifiOnly) { vm.updateBackup(backup.copy(wifiOnly = it)) }
-                SwitchRow("Hanya saat mengisi daya", null, backup.chargingOnly) { vm.updateBackup(backup.copy(chargingOnly = it)) }
-                ListItem(
-                    headlineContent = { Text("Jalankan backup sekarang") },
-                    leadingContent = { Icon(Icons.Filled.PhotoLibrary, null) },
-                    modifier = Modifier.clickable { container.transfers.runBackupNow(); context.toast("Backup dijalankan") },
-                )
+                SwitchRow(Icons.Filled.Wifi, "Hanya lewat Wi-Fi", null, backup.wifiOnly) { vm.updateBackup(backup.copy(wifiOnly = it)) }
+                SwitchRow(Icons.Filled.BatteryChargingFull, "Hanya saat mengisi daya", null, backup.chargingOnly) {
+                    vm.updateBackup(backup.copy(chargingOnly = it))
+                }
+                NavRow("Jalankan backup sekarang", Icons.Filled.CloudUpload) {
+                    container.transfers.runBackupNow()
+                    context.toast("Backup dijalankan")
+                }
             }
 
             SectionTitle("Keamanan")
@@ -194,6 +237,7 @@ fun AccountScreen(
             )
             ListItem(
                 headlineContent = { Text("Keluar dari semua perangkat", color = MaterialTheme.colorScheme.error) },
+                leadingContent = { Icon(Icons.Filled.PhonelinkErase, null, tint = MaterialTheme.colorScheme.error) },
                 modifier = Modifier.clickable { confirmLogoutAll = true },
             )
         }
@@ -214,29 +258,113 @@ private fun buildPerms(includeVideos: Boolean): Array<String> =
     AutoBackupWorker.requiredPermissions(includeVideos) +
         if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
 
+// ------------------------------------------------------------------
+// Grafik sisa SSD / HDD / RAM
+// ------------------------------------------------------------------
+
 @Composable
-private fun StorageCard(s: StorageStatusOut) {
-    val usage = s.usage
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text("Penyimpanan", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "${formatBytes(usage.usedBytes)} dipakai · ${usage.fileCount} file · trash ${formatBytes(usage.trashBytes)}",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        val quota = usage.quotaBytes
-        if (quota != null && quota > 0) {
-            LinearProgressIndicator(
-                progress = { (usage.usedBytes.toFloat() / quota).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            )
-            Text("Kuota ${formatBytes(quota)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-        }
-        s.primary.takeIf { it.available }?.let { dev ->
+private fun ResourceCard(s: StorageStatusOut?, memory: MemoryInfo?, showRam: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        if (s == null) {
             Text(
-                "Disk server: ${formatBytes(dev.freeBytes)} kosong dari ${formatBytes(dev.totalBytes)}",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                "Info penyimpanan tidak tersedia",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(16.dp),
             )
+            return@Card
         }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 16.dp, start = 8.dp, end = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            UsageRing(
+                label = "SSD", icon = Icons.Filled.SdStorage, color = MaterialTheme.colorScheme.primary,
+                available = s.primary.available, total = s.primary.totalBytes, free = s.primary.freeBytes,
+                modifier = Modifier.weight(1f),
+            )
+            UsageRing(
+                label = "HDD", icon = Icons.Filled.Storage, color = MaterialTheme.colorScheme.tertiary,
+                available = s.backup.available, total = s.backup.totalBytes, free = s.backup.freeBytes,
+                modifier = Modifier.weight(1f),
+            )
+            if (showRam) {
+                UsageRing(
+                    label = "RAM", icon = Icons.Filled.Memory, color = MaterialTheme.colorScheme.secondary,
+                    available = memory != null, total = memory?.totalBytes, free = memory?.availableBytes,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        val usage = s.usage
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Data kamu: ${formatBytes(usage.usedBytes)} · ${usage.fileCount} file · trash ${formatBytes(usage.trashBytes)}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            val quota = usage.quotaBytes
+            if (quota != null && quota > 0) {
+                LinearProgressIndicator(
+                    progress = { (usage.usedBytes.toFloat() / quota).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                )
+                Text(
+                    "Sisa kuota ${formatBytes(usage.quotaFreeBytes ?: (quota - usage.usedBytes).coerceAtLeast(0))} dari ${formatBytes(quota)}",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+    }
+}
+
+/** Grafik donat: busur berwarna = terpakai, angka tengah = persen sisa. */
+@Composable
+private fun UsageRing(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    available: Boolean,
+    total: Long?,
+    free: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val ok = available && total != null && total > 0 && free != null
+    val usedFraction = if (ok) (1f - free!!.toFloat() / total!!.toFloat()).coerceIn(0f, 1f) else 0f
+    val freePercent = if (ok) ((1f - usedFraction) * 100).toInt() else 0
+    // Sisa < 10% → warna peringatan.
+    val arcColor = if (ok && freePercent < 10) MaterialTheme.colorScheme.error else color
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val animated by animateFloatAsState(usedFraction, animationSpec = tween(700), label = "ring-$label")
+
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 9.dp.toPx()
+                val inset = stroke / 2
+                val arcSize = Size(size.width - stroke, size.height - stroke)
+                drawArc(track, -90f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+                if (ok && animated > 0f) {
+                    drawArc(arcColor, -90f, 360f * animated, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(icon, null, tint = if (ok) arcColor else MaterialTheme.colorScheme.outline, modifier = Modifier.size(18.dp))
+                Text(
+                    if (ok) "$freePercent%" else "—",
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                )
+                Text("sisa", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+        Text(
+            if (ok) "${formatBytes(free)} kosong\ndari ${formatBytes(total)}" else "Tidak tersedia",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -249,10 +377,11 @@ fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(icon: ImageVector, title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = subtitle?.let { { Text(it) } },
+        leadingContent = { Icon(icon, null) },
         trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
         modifier = Modifier.clickable { onChange(!checked) },
     )

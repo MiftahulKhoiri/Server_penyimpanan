@@ -4,7 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Icon
@@ -72,7 +72,7 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
     FILES("files", "Berkas", Icons.Filled.Folder),
     GALLERY("gallery", "Galeri", Icons.Filled.PhotoLibrary),
     TRANSFERS("transfers", "Transfer", Icons.Filled.SwapVert),
-    ACCOUNT("account", "Akun", Icons.Filled.Person),
+    ACCOUNT("account", "Pengaturan", Icons.Filled.Settings),
 }
 
 @Composable
