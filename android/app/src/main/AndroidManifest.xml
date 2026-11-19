@@ -14,6 +14,8 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Pembaruan dari dalam aplikasi (APK dari GitHub Releases, lihat data/update) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".PenyimpananApp"
@@ -48,6 +50,11 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Hasil PackageInstaller untuk pembaruan aplikasi -->
+        <receiver
+            android:name=".data.update.InstallResultReceiver"
+            android:exported="false" />
 
         <!-- WorkManager menjalankan upload/unduh sebagai foreground service tipe dataSync -->
         <service

@@ -98,6 +98,7 @@ import id.serverpenyimpanan.android.ui.common.appViewModel
 import id.serverpenyimpanan.android.ui.common.formatBytes
 import id.serverpenyimpanan.android.ui.common.formatDateTime
 import id.serverpenyimpanan.android.ui.common.toast
+import id.serverpenyimpanan.android.ui.update.UpdateSection
 import id.serverpenyimpanan.android.work.AutoBackupWorker
 import kotlinx.coroutines.launch
 
@@ -223,6 +224,7 @@ fun AccountScreen(
             SectionTitle("Lainnya")
             NavRow("Trash", Icons.Filled.Delete, onOpenTrash)
             if ((vm.me as? Load.Ready)?.data?.isAdmin == true) NavRow("Admin server", Icons.Filled.AdminPanelSettings, onOpenAdmin)
+            UpdateSection()
             ListItem(
                 headlineContent = { Text("Server") },
                 supportingContent = { Text(serverUrl ?: "-") },
