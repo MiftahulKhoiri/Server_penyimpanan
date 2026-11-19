@@ -8,6 +8,10 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/server_penyimpanan}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/server-penyimpanan}"
 CONFIG_FILE="${CONFIG_FILE:-${CONFIG_DIR}/server.env}"
 UNIT_FILE="${UNIT_FILE:-/etc/systemd/system/${SERVICE_NAME}.service}"
+# Helper root pemasangan SSD/HDD dari aplikasi (socket-activated, satu proses per permintaan).
+HELPER_NAME="${HELPER_NAME:-${SERVICE_NAME}-storage}"
+HELPER_SOCKET_UNIT="${HELPER_SOCKET_UNIT:-/etc/systemd/system/${HELPER_NAME}.socket}"
+HELPER_SERVICE_UNIT="${HELPER_SERVICE_UNIT:-/etc/systemd/system/${HELPER_NAME}@.service}"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok() { printf '\033[1;32m OK\033[0m %s\n' "$*"; }

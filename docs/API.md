@@ -515,6 +515,44 @@ curl $BASE/storage/backup/1 -H "Authorization: Bearer $TOKEN"
 | GET | `/system/statistics` | Jumlah pengguna (total/aktif), file (jumlah, ukuran, per `media_type`), folder, trash, upload aktif, aktivitas 24 jam terakhir |
 | GET | `/admin/activity` | Seluruh activity log; filter `user_id`, `action`, `since`, `until` |
 
+### Pemasangan SSD/HDD (tab "Disk" di aplikasi)
+
+Server berjalan tanpa hak root, jadi pemasangan disk dikerjakan **helper root** kecil
+(`scripts/storage_helper.py`, dipasang otomatis oleh `install_pi.sh`/`update.sh`) lewat socket Unix
+yang hanya bisa dibuka user layanan. Helper tidak pernah memformat atau menghapus data.
+
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/storage/setup` | `helper_available`, `restart_pending`, `roles` (ssd/hdd: `mount_point`, `paths`, `mounted`, `device`, `uuid`, `fstype`, `managed`, kapasitas, `can_mount`, `can_unmount`), `partitions` (semua disk terdeteksi + `usable`/`reason`), `job` terakhir |
+| POST | `/storage/setup/hdd/mount` | Body `{"uuid": "..."}` dari `partitions`: pasang sebagai HDD backup + simpan ke `/etc/fstab` (UUID, `nofail`) |
+| POST | `/storage/setup/hdd/unmount` | Lepas HDD + hapus entri fstab; aman dicabut sesudahnya |
+| PUT | `/storage/setup/{role}/mount-point` | Body `{"mount_point": "/mnt/data"}`: pindah lokasi mount SSD/HDD (disk yang sama). **Server dijalankan ulang** (`202`, `restarting: true`) |
+| GET | `/storage/setup/job` | Status operasi terakhir: `running` → `succeeded` / `failed` (+ `steps`, `message`, `error_code`) |
+
+Aturan:
+- **SSD hanya bisa dipindah lokasinya.** Memasang/melepas/mengganti SSD tetap lewat SSH karena
+  database server ada di SSD: tanpa SSD aplikasi tidak bisa login (`422 ssd_via_ssh`).
+- Partisi yang bisa dipakai: filesystem `ext4`, `xfs`, `btrfs`, atau `f2fs` dengan UUID. Disk sistem
+  (kartu SD/boot) selalu ditolak (`system_disk`); `vfat`/`exfat`/`ntfs` ditolak
+  (`unsupported_filesystem`) karena tidak menyimpan izin file Linux.
+- Lokasi mount harus `/mnt/<nama>`, `/media/<nama>`, atau `/srv/<nama>` dan folder itu harus kosong.
+  Disk dipasang dengan `noatime,nosuid,nodev,noexec`.
+- Pindah lokasi: server berhenti ±10-30 detik. Klien sebaiknya menampilkan "server dijalankan ulang",
+  menunggu `GET /system/health` merespons lagi, lalu membaca `GET /storage/setup/job`. Bila server
+  gagal jalan dengan lokasi baru, helper **memulihkan pengaturan lama** otomatis (`status: failed`).
+- Semua aksi ditolak `409 backup_running` selama backup berjalan, dan `409 busy` bila operasi disk
+  lain belum selesai.
+
+```bash
+curl $BASE/storage/setup -H "Authorization: Bearer $TOKEN"
+curl -X POST $BASE/storage/setup/hdd/mount -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' -d '{"uuid": "3f1c2b7e-...-9a0d"}'
+curl -X PUT $BASE/storage/setup/ssd/mount-point -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' -d '{"mount_point": "/mnt/data"}'
+```
+
+Dari SSH, daftar yang sama bisa dilihat dengan `sudo /opt/server_penyimpanan/scripts/manage.sh disks`.
+
 ### Health check (publik)
 
 ```bash
@@ -540,11 +578,13 @@ saat menerima `503`.
 | 404 | `file_not_found`, `folder_not_found`, `upload_not_found`, `trash_item_not_found`, `session_not_found`, `user_not_found`, `backup_job_not_found`, `not_found` | Tidak ada, atau milik pengguna lain |
 | 404 | `file_data_missing` | Catatan file ada tetapi data fisiknya hilang di SSD (hubungi admin; bisa dipulihkan dari backup) |
 | 404 | `thumbnail_unavailable` | Tidak ada thumbnail untuk file ini |
+| 404 | `partition_not_found` | Partisi yang dipilih tidak ada lagi (disk dicabut?) |
 | 405 | `method_not_allowed` | Method HTTP salah |
 | 409 | `name_conflict`, `folder_cycle` | Nama sudah dipakai / folder ke dalam dirinya sendiri |
 | 409 | `username_taken`, `email_taken`, `user_exists` | Akun bentrok |
 | 409 | `upload_incomplete`, `upload_not_active`, `upload_busy`, `upload_already_completed` | Lihat [bagian 4](#kode-error-upload-dan-tindakan-klien) |
 | 409 | `backup_running` | Backup lain sedang berjalan |
+| 409 | `busy`, `mount_point_busy`, `mount_point_not_empty`, `mount_point_conflict`, `mounted_elsewhere`, `used_by_other_role`, `device_busy`, `no_change`, `not_mounted` | Pemasangan disk bentrok dengan keadaan sekarang (lihat `detail`) |
 | 409 | `cannot_demote_self`, `cannot_delete_self`, `last_admin`, `user_has_data` | Aturan pengamanan admin |
 | 410 | `upload_expired` | Sesi upload kedaluwarsa |
 | 411 | `length_required` | Header `Content-Length` wajib (upload sekali kirim) |
@@ -555,11 +595,14 @@ saat menerima `503`.
 | 422 | `invalid_name`, `weak_password`, `same_password`, `folder_too_deep` | Aturan nama/password/kedalaman |
 | 422 | `checksum_mismatch`, `chunk_checksum_mismatch`, `invalid_checksum`, `upload_corrupted` | Checksum tidak cocok / format checksum salah |
 | 422 | `invalid_chunk_size`, `too_many_chunks`, `invalid_chunk_index` | Parameter upload salah |
+| 422 | `ssd_via_ssh`, `system_disk`, `no_filesystem`, `unsupported_filesystem`, `no_uuid`, `invalid_uuid`, `invalid_mount_point`, `invalid_role` | Disk/lokasi tidak bisa dipakai untuk pemasangan |
 | 429 | `too_many_attempts` | Terlalu banyak login gagal (header `Retry-After`) |
 | 429 | `too_many_uploads` | Terlalu banyak upload aktif |
 | 500 | `internal_error` | Kesalahan tak terduga (detail hanya ada di log server) |
+| 502 | `mount_failed`, `umount_failed`, `fstab_invalid`, `lsblk_failed`, `config_inconsistent`, `service_start_failed`, `service_unhealthy`, `helper_timeout`, `helper_bad_response` | Perintah sistem di helper pemasangan disk gagal (lihat `detail`) |
 | 503 | `primary_storage_unavailable`, `database_unavailable`, `database_error` | SSD/database tidak tersedia; coba lagi setelah `Retry-After` |
 | 503 | `backup_unavailable`, `thumbnail_busy` | HDD tidak tersedia / thumbnail sedang dibuat |
+| 503 | `storage_helper_unavailable` | Helper pemasangan disk belum terpasang (jalankan `sudo ./scripts/update.sh`) |
 | 507 | `quota_exceeded`, `insufficient_storage` | Kuota pengguna / ruang SSD tidak cukup |
 
 ---
@@ -609,6 +652,11 @@ saat menerima `503`.
 | POST | `/api/v1/storage/backup` | admin |
 | GET | `/api/v1/storage/backup` | admin |
 | GET | `/api/v1/storage/backup/{job_id}` | admin |
+| GET | `/api/v1/storage/setup` | admin |
+| GET | `/api/v1/storage/setup/job` | admin |
+| POST | `/api/v1/storage/setup/{role}/mount` | admin |
+| POST | `/api/v1/storage/setup/{role}/unmount` | admin |
+| PUT | `/api/v1/storage/setup/{role}/mount-point` | admin |
 | GET | `/api/v1/trash` | user |
 | DELETE | `/api/v1/trash` | user |
 | POST | `/api/v1/trash/{file_id}/restore` | user |

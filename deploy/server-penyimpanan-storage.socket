@@ -1,0 +1,18 @@
+# Socket helper pemasangan SSD/HDD (Admin server > Disk di aplikasi).
+# Dipasang oleh scripts/install_pi.sh (placeholder @...@ diganti otomatis).
+# Hanya user/grup layanan (@SERVICE_USER@) yang bisa terhubung; tiap koneksi menjalankan satu
+# proses helper (server-penyimpanan-storage@.service) sebagai root.
+[Unit]
+Description=Server_penyimpanan - socket helper pemasangan SSD/HDD
+
+[Socket]
+ListenStream=/run/server-penyimpanan-storage/helper.sock
+SocketUser=root
+SocketGroup=@SERVICE_USER@
+SocketMode=0660
+DirectoryMode=0755
+Accept=yes
+MaxConnections=4
+
+[Install]
+WantedBy=sockets.target

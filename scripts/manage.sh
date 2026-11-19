@@ -5,6 +5,7 @@
 #   sudo scripts/manage.sh logs              ikuti log (Ctrl+C untuk keluar)
 #   sudo scripts/manage.sh check-storage     periksa SSD & HDD
 #   sudo scripts/manage.sh prepare-storage   buat direktori data di SSD/HDD yang ter-mount
+#   sudo scripts/manage.sh disks             daftar disk & status pemasangan (seperti di aplikasi)
 #   sudo scripts/manage.sh init-db           buat / migrasi database
 #   sudo scripts/manage.sh create-admin NAMA buat akun administrator
 #   sudo scripts/manage.sh backup-now [--verify-existing]
@@ -40,6 +41,11 @@ case "$cmd" in
     prepare-storage)
         exec "$INSTALL_DIR/scripts/prepare_storage.sh"
         ;;
+    disks)
+        require_root
+        exec env SP_CONFIG_FILE="$CONFIG_FILE" SP_UNIT_FILE="$UNIT_FILE" SP_SERVICE_NAME="$SERVICE_NAME" \
+            SP_SERVICE_USER="$SERVICE_USER" python3 -I "$INSTALL_DIR/scripts/storage_helper.py" --status
+        ;;
     init-db)
         require_root
         run_as_service "$PY" scripts/init_db.py
@@ -58,7 +64,7 @@ case "$cmd" in
         run_as_service "$PY" scripts/restore_backup.py "$@"
         ;;
     help|-h|--help)
-        sed -n '2,12p' "$0"
+        sed -n '2,13p' "$0"
         ;;
     *)
         die "Perintah tidak dikenal: $cmd (lihat: manage.sh help)"

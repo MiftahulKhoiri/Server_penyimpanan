@@ -134,9 +134,24 @@ if have_systemd; then
         -e "s|@BACKUP_MOUNT@|${BACKUP_MOUNT}|g" \
         "$INSTALL_DIR/deploy/server-penyimpanan.service" >"$UNIT_FILE"
     chmod 0644 "$UNIT_FILE"
+
+    # Helper root untuk pemasangan SSD/HDD dari aplikasi (Admin server > Disk).
+    for pair in "server-penyimpanan-storage.socket:$HELPER_SOCKET_UNIT" \
+                "server-penyimpanan-storage@.service:$HELPER_SERVICE_UNIT"; do
+        sed -e "s|@SERVICE_USER@|${SERVICE_USER}|g" \
+            -e "s|@SERVICE_NAME@|${SERVICE_NAME}|g" \
+            -e "s|@INSTALL_DIR@|${INSTALL_DIR}|g" \
+            -e "s|@CONFIG_FILE@|${CONFIG_FILE}|g" \
+            -e "s|@UNIT_FILE@|${UNIT_FILE}|g" \
+            "$INSTALL_DIR/deploy/${pair%%:*}" >"${pair#*:}"
+        chmod 0644 "${pair#*:}"
+    done
     systemctl daemon-reload
     systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
+    systemctl enable "$(basename "$HELPER_SOCKET_UNIT")" >/dev/null 2>&1
+    systemctl restart "$(basename "$HELPER_SOCKET_UNIT")"
     ok "aktif otomatis saat boot (systemctl is-enabled: $(systemctl is-enabled "$SERVICE_NAME"))"
+    ok "helper pemasangan disk: $(systemctl is-active "$(basename "$HELPER_SOCKET_UNIT")")"
     if [ "$START" -eq 1 ]; then
         systemctl restart "$SERVICE_NAME"
         for _ in $(seq 1 30); do

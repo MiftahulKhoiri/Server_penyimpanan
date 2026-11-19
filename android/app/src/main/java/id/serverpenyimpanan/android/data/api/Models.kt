@@ -360,3 +360,82 @@ data class AdminUserUpdate(
 /** Body error standar server: {"detail": ..., "code": ...}. */
 @Serializable
 data class ErrorBody(val detail: kotlinx.serialization.json.JsonElement? = null, val code: String? = null)
+
+// ---------------- Pemasangan disk (admin) ----------------
+@Serializable
+data class PartitionOut(
+    val path: String,
+    val name: String? = null,
+    val disk: String,
+    val sizeBytes: Long? = null,
+    val fstype: String? = null,
+    val uuid: String? = null,
+    val label: String? = null,
+    val model: String? = null,
+    val transport: String? = null,
+    val removable: Boolean = false,
+    val mountpoint: String? = null,
+    val system: Boolean = false,
+    val usable: Boolean = false,
+    val reason: String? = null,
+    val reasonText: String? = null,
+    val role: String? = null,
+)
+
+@Serializable
+data class DiskRoleOut(
+    val role: String,
+    val mountPoint: String,
+    val paths: Map<String, String> = emptyMap(),
+    val mounted: Boolean,
+    val device: String? = null,
+    val uuid: String? = null,
+    val fstype: String? = null,
+    val label: String? = null,
+    val model: String? = null,
+    val managed: Boolean = false,
+    val fstabUuid: String? = null,
+    val totalBytes: Long? = null,
+    val freeBytes: Long? = null,
+    val canMount: Boolean = false,
+    val canUnmount: Boolean = false,
+) {
+    val isSsd: Boolean get() = role == "ssd"
+}
+
+@Serializable
+data class SetupJobOut(
+    val id: Int,
+    val op: String,
+    val role: String,
+    val status: String,
+    val steps: List<String> = emptyList(),
+    val message: String? = null,
+    val errorCode: String? = null,
+    val startedAt: String? = null,
+    val finishedAt: String? = null,
+) {
+    val isRunning: Boolean get() = status == "running"
+}
+
+@Serializable
+data class StorageSetupOut(
+    val helperAvailable: Boolean,
+    val helperError: String? = null,
+    val restartPending: Boolean = false,
+    val roles: List<DiskRoleOut> = emptyList(),
+    val partitions: List<PartitionOut> = emptyList(),
+    val job: SetupJobOut? = null,
+)
+
+@Serializable
+data class MountRequest(val uuid: String)
+
+@Serializable
+data class MountPointRequest(val mountPoint: String)
+
+@Serializable
+data class SetupActionOut(val detail: String, val restarting: Boolean, val job: SetupJobOut)
+
+@Serializable
+data class SetupJobResponse(val job: SetupJobOut? = null)

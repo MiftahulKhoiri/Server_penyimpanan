@@ -5,10 +5,12 @@
 # Pemakaian (dari root proyek, user harus bisa menjalankan docker):
 #   tests/deploy/run_e2e.sh            jalankan semua skenario
 #   KEEP=1 tests/deploy/run_e2e.sh     jangan hapus container/volume setelah selesai
+#   IMAGE=nama:tag SKIP_BUILD=1 ...     pakai image systemd lain yang sudah ada (tanpa docker build)
+#   E2E_DOCKER_ARGS="-e HTTPS_PROXY=..." argumen tambahan untuk docker run (mis. proxy)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAME=sp-e2e
-IMAGE=sp-e2e:bookworm
+IMAGE="${IMAGE:-sp-e2e:bookworm}"
 PASS=0
 FAIL=0
 
@@ -33,11 +35,12 @@ trap cleanup EXIT
 remove_all
 
 say "Menyiapkan container"
-docker build -q -t "$IMAGE" "$ROOT/tests/deploy" >/dev/null
+[ "${SKIP_BUILD:-0}" = "1" ] || docker build -q -t "$IMAGE" "$ROOT/tests/deploy" >/dev/null
 docker volume create sp-e2e-ssd >/dev/null
 docker volume create sp-e2e-hdd >/dev/null
+# shellcheck disable=SC2086  # E2E_DOCKER_ARGS sengaja dipecah per spasi
 docker run -d --name "$NAME" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-    --tmpfs /run --tmpfs /run/lock \
+    --tmpfs /run --tmpfs /run/lock ${E2E_DOCKER_ARGS:-} \
     -v sp-e2e-ssd:/mnt/ssd -v sp-e2e-hdd:/mnt/hdd -v "$ROOT:/src:ro" "$IMAGE" >/dev/null
 for _ in $(seq 1 30); do
     state="$(docker exec "$NAME" systemctl is-system-running 2>/dev/null || true)"
@@ -77,7 +80,7 @@ check "file di SSD milik penyimpanan, mode 600 (UMask)" \
 say "3. Backup & restore"
 check "backup lewat API (202) lalu selesai" inside "curl -fsS -X POST $AUTH http://127.0.0.1:8000/api/v1/storage/backup >/dev/null && sleep 3 && curl -fsS $AUTH http://127.0.0.1:8000/api/v1/storage/backup/1 | grep -q '\"status\":\"completed\"'"
 check "backup-now lewat CLI (inkremental, 0 gagal)" inside "$APP/scripts/manage.sh backup-now | grep -q ', 0 gagal'"
-check "salinan database di HDD" inside "ls /mnt/hdd/backup/database/server-*.db"
+check "salinan database di HDD (set backup)" inside "ls /mnt/hdd/backup/sets/*/database.db"
 inside "rm -f \$(find /mnt/ssd/storage/files -type f | head -1)"
 check "restore menolak berjalan saat server hidup" inside "! $APP/scripts/manage.sh restore --files --apply"
 check "restore simulasi mendeteksi 1 file hilang" inside "$APP/scripts/manage.sh restore --files | grep -q '1 akan dipulihkan'"
@@ -131,6 +134,54 @@ check "database baru dibuat di SSD yang baru dipasang" inside "test -f /mnt/ssd/
 inside "uid=\$(id -u penyimpanan); gid=\$(id -g penyimpanan); mount -t tmpfs -o size=50m,uid=\$uid,gid=\$gid,mode=0750 tmpfs /mnt/hdd; sleep 1"
 check "HDD yang dipasang belakangan terdeteksi" inside "curl -fsS http://127.0.0.1:8000/api/v1/system/health | grep -q '\"backup_storage\":\"ok\"'"
 check "hardening: layanan tidak bisa menulis /etc /var /opt" inside "pid=\$(systemctl show -p MainPID --value server-penyimpanan); for d in /etc /var /opt/server_penyimpanan; do ! nsenter -t \$pid -m -S \$(id -u penyimpanan) -G \$(id -g penyimpanan) touch \$d/uji 2>/dev/null || exit 1; done"
+
+say "10. Pemasangan disk dari aplikasi (helper root lewat socket systemd)"
+check "socket helper aktif" inside "systemctl is-active server-penyimpanan-storage.socket"
+check "socket helper hanya untuk grup layanan (660 root:penyimpanan)" \
+    inside "[ \"\$(stat -c '%a %U %G' /run/server-penyimpanan-storage/helper.sock)\" = '660 root penyimpanan' ]"
+check "user lain tidak bisa membuka socket helper" \
+    inside "! runuser -u tester -- python3 -c \"import socket; s=socket.socket(socket.AF_UNIX); s.connect('/run/server-penyimpanan-storage/helper.sock')\" 2>/dev/null"
+# Di container tidak ada USB disk: izinkan loop device sebagai "HDD" khusus untuk uji ini.
+inside "mkdir -p /etc/systemd/system/server-penyimpanan-storage@.service.d && printf '[Service]\nEnvironment=SP_ALLOW_LOOP=1\n' > /etc/systemd/system/server-penyimpanan-storage@.service.d/uji.conf && systemctl daemon-reload"
+inside "printf 'AdminKuat2026' | $APP/scripts/manage.sh create-admin admin2 --password-stdin >/dev/null"
+TOKEN="$(api "-X POST http://127.0.0.1:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin2\",\"password\":\"AdminKuat2026\"}'" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
+AUTH="-H 'Authorization: Bearer $TOKEN'"
+SETUP=http://127.0.0.1:8000/api/v1/storage/setup
+inside "umount /mnt/hdd"
+LOOP="$(inside "truncate -s 64M /root/hdd.img && losetup -f --show /root/hdd.img")"
+inside "mkfs.ext4 -q -L backup $LOOP"
+HDD_UUID="$(inside "blkid -s UUID -o value $LOOP")"
+check "GET /storage/setup: helper tersedia & HDD baru terdeteksi" \
+    inside "curl -fsS $AUTH $SETUP | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d[\"helper_available\"], d; assert any(p[\"uuid\"]==\"$HDD_UUID\" and p[\"usable\"] for p in d[\"partitions\"]), d'"
+check "POST hdd/mount memasang disk (nosuid,nodev,noexec)" \
+    inside "curl -fsS -X POST $AUTH $SETUP/hdd/mount -H 'Content-Type: application/json' -d '{\"uuid\":\"$HDD_UUID\"}' >/dev/null && findmnt -n -o SOURCE,OPTIONS /mnt/hdd | grep '^$LOOP ' | grep -q nosuid,nodev,noexec"
+check "entri fstab dikelola aplikasi (UUID, nofail)" inside "grep -A1 '^# server-penyimpanan:hdd' /etc/fstab | grep -q 'UUID=$HDD_UUID /mnt/hdd ext4 .*nofail'"
+check "layanan (namespace ter-hardening) melihat HDD baru" \
+    inside "curl -fsS http://127.0.0.1:8000/api/v1/system/health | grep -q '\"backup_storage\":\"ok\"'"
+check "backup ke HDD yang dipasang dari aplikasi berhasil" \
+    inside "id=\$(curl -fsS -X POST $AUTH http://127.0.0.1:8000/api/v1/storage/backup | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"id\"])') && sleep 3 && curl -fsS $AUTH http://127.0.0.1:8000/api/v1/storage/backup/\$id | grep -q '\"status\":\"completed\"'"
+check "PUT hdd/mount-point -> 202 (server dijalankan ulang)" \
+    inside "code=\$(curl -s -o /root/put.json -w '%{http_code}' -X PUT $AUTH $SETUP/hdd/mount-point -H 'Content-Type: application/json' -d '{\"mount_point\":\"/mnt/backup2\"}'); echo \"HTTP \$code\"; cat /root/put.json; [ \"\$code\" = 202 ]"
+for _ in $(seq 1 60); do
+    inside "curl -fsS $AUTH $SETUP/job 2>/dev/null | grep -q '\"status\":\"succeeded\"'" && break
+    sleep 2
+done
+check "job pindah lokasi selesai (succeeded)" inside "curl -fsS $AUTH $SETUP/job | grep -q '\"status\":\"succeeded\"'"
+check "disk kini di /mnt/backup2, /mnt/hdd lama dibersihkan" \
+    inside "findmnt -n -o SOURCE /mnt/backup2 | grep -qx '$LOOP' && ! test -e /mnt/hdd"
+check "konfigurasi & unit diperbarui" \
+    inside "grep -qx 'BACKUP_MOUNT_POINT=/mnt/backup2' /etc/server-penyimpanan/server.env && grep -qx 'BACKUP_STORAGE_PATH=/mnt/backup2/backup' /etc/server-penyimpanan/server.env && grep -q '^ReadWritePaths=.* -/mnt/backup2 ' /etc/systemd/system/server-penyimpanan.service"
+check "server memakai lokasi baru (restart_pending=false) & backup tetap jalan" \
+    inside "curl -fsS $AUTH $SETUP | grep -q '\"restart_pending\":false' && id=\$(curl -fsS -X POST $AUTH http://127.0.0.1:8000/api/v1/storage/backup | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"id\"])') && sleep 3 && curl -fsS $AUTH http://127.0.0.1:8000/api/v1/storage/backup/\$id | grep -q '\"status\":\"completed\"' && ls /mnt/backup2/backup/sets/*/database.db"
+check "hardening tetap: layanan tidak bisa menulis /etc" \
+    inside "pid=\$(systemctl show -p MainPID --value server-penyimpanan); ! nsenter -t \$pid -m -S \$(id -u penyimpanan) -G \$(id -g penyimpanan) touch /etc/uji 2>/dev/null"
+check "SSD tanpa UUID (tmpfs) ditolak, tidak ada yang berubah" \
+    inside "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -X PUT $AUTH $SETUP/ssd/mount-point -H 'Content-Type: application/json' -d '{\"mount_point\":\"/mnt/data\"}')\" = 422 ] && grep -qx 'PRIMARY_MOUNT_POINT=/mnt/ssd' /etc/server-penyimpanan/server.env"
+check "POST hdd/unmount melepas disk & entri fstab" \
+    inside "curl -fsS -X POST $AUTH $SETUP/hdd/unmount >/dev/null && ! findmnt /mnt/backup2 >/dev/null && ! grep -q '^# server-penyimpanan:hdd' /etc/fstab"
+check "health: backup_storage unavailable setelah dilepas" \
+    inside "curl -fsS http://127.0.0.1:8000/api/v1/system/health | grep -q '\"backup_storage\":\"unavailable\"'"
+inside "losetup -d $LOOP; rm -f /root/hdd.img; rm -rf /etc/systemd/system/server-penyimpanan-storage@.service.d; systemctl daemon-reload"
 
 say "9. Tes otomatis di Python 3.11"
 check "pytest lolos di Python $(inside 'python3 --version')" inside "cd $APP && python3 -m venv /tmp/venv && /tmp/venv/bin/pip install -q -r requirements-dev.txt && /tmp/venv/bin/python -m pytest -q -p no:cacheprovider"

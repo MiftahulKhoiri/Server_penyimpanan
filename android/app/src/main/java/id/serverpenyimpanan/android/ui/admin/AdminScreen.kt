@@ -54,6 +54,12 @@ import id.serverpenyimpanan.android.data.api.BackupJobOut
 import id.serverpenyimpanan.android.data.api.BackupStartRequest
 import id.serverpenyimpanan.android.data.api.DeviceOut
 import id.serverpenyimpanan.android.data.api.HealthOut
+import id.serverpenyimpanan.android.data.api.MountPointRequest
+import id.serverpenyimpanan.android.data.api.MountRequest
+import id.serverpenyimpanan.android.data.api.PartitionOut
+import id.serverpenyimpanan.android.data.api.SetupActionOut
+import id.serverpenyimpanan.android.data.api.SetupJobOut
+import id.serverpenyimpanan.android.data.api.StorageSetupOut
 import id.serverpenyimpanan.android.data.api.StatisticsOut
 import id.serverpenyimpanan.android.data.api.SystemStatusOut
 import id.serverpenyimpanan.android.data.api.UserOut
@@ -94,6 +100,16 @@ class AdminViewModel(private val app: AppContainer) : ViewModel() {
         private set
     var message by mutableStateOf<String?>(null)
     private var backupWatcher: Job? = null
+
+    // ---- Disk (pemasangan SSD/HDD) ----
+    var disks by mutableStateOf<StorageSetupOut?>(null)
+        private set
+    var disksError by mutableStateOf<ApiException?>(null)
+        private set
+    /** Teks progres operasi disk yang sedang berjalan; null = tidak ada. */
+    var diskBusy by mutableStateOf<String?>(null)
+        private set
+    private var diskWatcher: Job? = null
 
     fun loadDashboard() {
         viewModelScope.launch {
@@ -160,6 +176,84 @@ class AdminViewModel(private val app: AppContainer) : ViewModel() {
 
     fun deleteUser(user: UserOut) = act("${user.username} dihapus", { loadUsers() }) { apiCall { api.deleteUser(user.id) } }
 
+    fun loadDisks(): Job = viewModelScope.launch {
+        try {
+            disksError = null
+            disks = apiCall { api.storageSetup() }
+        } catch (e: ApiException) {
+            disksError = e
+        }
+    }
+
+    fun mountHdd(partition: PartitionOut) {
+        val uuid = partition.uuid ?: return
+        diskAction("Memasang ${partition.path}…") { apiCall { api.mountDisk("hdd", MountRequest(uuid)) } }
+    }
+
+    fun unmountHdd() = diskAction("Melepas HDD…") { apiCall { api.unmountDisk("hdd") } }
+
+    fun setMountPoint(role: String, mountPoint: String) {
+        if (diskBusy != null) return
+        diskWatcher?.cancel()
+        diskWatcher = viewModelScope.launch {
+            diskBusy = "Memindahkan lokasi mount…"
+            // ID job sebelum aksi: bila jawaban server terputus karena server keburu berhenti,
+            // job baru tetap bisa dikenali (id lebih besar) dan dipantau sampai selesai.
+            val previousId = runCatching { apiCall { api.storageSetupJob() }.job?.id }.getOrNull() ?: 0
+            try {
+                val result = apiCall { api.setMountPoint(role, MountPointRequest(mountPoint)) }
+                diskBusy = "Server dijalankan ulang untuk memindahkan disk. Tunggu sebentar…"
+                message = waitForJob { it.id == result.job.id }
+            } catch (e: ApiException) {
+                message = if (e.isNetwork) {
+                    diskBusy = "Server dijalankan ulang untuk memindahkan disk. Tunggu sebentar…"
+                    waitForJob { it.id > previousId && it.op == "set_mount_point" }
+                } else {
+                    e.message
+                }
+            } finally {
+                diskBusy = null
+                loadDisks()
+            }
+        }
+    }
+
+    private fun diskAction(progress: String, block: suspend () -> SetupActionOut) {
+        if (diskBusy != null) return
+        diskWatcher?.cancel()
+        diskWatcher = viewModelScope.launch {
+            diskBusy = progress
+            try {
+                message = block().detail
+            } catch (e: ApiException) {
+                message = e.message
+            } finally {
+                diskBusy = null
+                loadDisks()
+            }
+        }
+    }
+
+    /**
+     * Tunggu operasi yang menjalankan ulang server selesai. Selama server berhenti, request gagal
+     * (jaringan/503) dan diabaikan. Maksimal ±3 menit.
+     */
+    private suspend fun waitForJob(matches: (SetupJobOut) -> Boolean): String {
+        delay(3_000)
+        repeat(90) {
+            val job = runCatching { apiCall { api.storageSetupJob() }.job }.getOrNull()
+            if (job != null && matches(job) && !job.isRunning) {
+                return if (job.status == "succeeded") {
+                    job.message ?: "Selesai"
+                } else {
+                    "Gagal: ${job.message ?: job.errorCode ?: "tidak diketahui"}"
+                }
+            }
+            delay(2_000)
+        }
+        return "Server belum kembali. Coba Muat ulang sebentar lagi."
+    }
+
     fun startBackup() = act("Backup ke HDD dimulai", { watchBackups() }) {
         apiCall { api.startBackup(BackupStartRequest()) }
     }
@@ -195,7 +289,8 @@ fun AdminScreen(onBack: () -> Unit) {
             0 -> vm.loadDashboard()
             1 -> vm.loadUsers()
             2 -> vm.loadBackups()
-            3 -> vm.loadActivity()
+            3 -> vm.loadDisks()
+            4 -> vm.loadActivity()
         }
     }
 
@@ -209,7 +304,7 @@ fun AdminScreen(onBack: () -> Unit) {
         ) { inner ->
             Column(Modifier.padding(inner).fillMaxSize()) {
                 PrimaryScrollableTabRow(selectedTabIndex = tab) {
-                    listOf("Dashboard", "Pengguna", "Backup", "Aktivitas").forEachIndexed { i, t ->
+                    listOf("Dashboard", "Pengguna", "Backup", "Disk", "Aktivitas").forEachIndexed { i, t ->
                         Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) })
                     }
                 }
@@ -217,6 +312,7 @@ fun AdminScreen(onBack: () -> Unit) {
                     0 -> DashboardTab(vm)
                     1 -> UsersTab(vm)
                     2 -> BackupsTab(vm)
+                    3 -> DisksTab(vm)
                     else -> {
                         val list = vm.activity
                         when {
@@ -287,7 +383,7 @@ private fun DeviceCard(title: String, dev: DeviceOut) = StatCard(title) {
 }
 
 @Composable
-private fun StatCard(title: String, content: @Composable () -> Unit) {
+internal fun StatCard(title: String, content: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -297,7 +393,7 @@ private fun StatCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Line(label: String, value: String) {
+internal fun Line(label: String, value: String) {
     Column(Modifier.padding(vertical = 4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
         Text(value, style = MaterialTheme.typography.bodyMedium)
@@ -305,7 +401,7 @@ private fun Line(label: String, value: String) {
 }
 
 @Composable
-private fun Meter(label: String, used: Long, total: Long) {
+internal fun Meter(label: String, used: Long, total: Long) {
     Column(Modifier.padding(vertical = 6.dp)) {
         Text("$label: ${formatBytes(used)} / ${formatBytes(total)}", style = MaterialTheme.typography.bodyMedium)
         LinearProgressIndicator(

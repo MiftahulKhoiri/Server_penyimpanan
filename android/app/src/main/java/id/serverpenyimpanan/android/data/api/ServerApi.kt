@@ -191,6 +191,22 @@ interface ServerApi {
     @GET("storage/backup/{id}")
     suspend fun backup(@Path("id") id: Int): BackupJobOut
 
+    // Pemasangan disk: role = "ssd" | "hdd"
+    @GET("storage/setup")
+    suspend fun storageSetup(): StorageSetupOut
+
+    @GET("storage/setup/job")
+    suspend fun storageSetupJob(): SetupJobResponse
+
+    @POST("storage/setup/{role}/mount")
+    suspend fun mountDisk(@Path("role") role: String, @Body body: MountRequest): SetupActionOut
+
+    @POST("storage/setup/{role}/unmount")
+    suspend fun unmountDisk(@Path("role") role: String): SetupActionOut
+
+    @PUT("storage/setup/{role}/mount-point")
+    suspend fun setMountPoint(@Path("role") role: String, @Body body: MountPointRequest): SetupActionOut
+
     @GET("admin/users")
     suspend fun users(
         @Query("search") search: String? = null,

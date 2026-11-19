@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     # banyak untuk Pi 3 (4 core, 1 GB): tiap thread menambah fragmentasi memori.
     THREADPOOL_SIZE: int = Field(16, ge=2, le=100)
 
+    # Socket helper root untuk pemasangan SSD/HDD dari aplikasi (dipasang install_pi.sh).
+    STORAGE_HELPER_SOCKET: Path = Path("/run/server-penyimpanan-storage/helper.sock")
+
     # Jika True, server menolak menulis bila SSD/HDD tidak benar-benar ter-mount.
     # Hanya boleh False untuk pengembangan/testing.
     REQUIRE_MOUNTED_STORAGE: bool = True

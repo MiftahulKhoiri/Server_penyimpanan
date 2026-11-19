@@ -18,6 +18,13 @@ if have_systemd && [ -f "$UNIT_FILE" ]; then
     systemctl daemon-reload
     ok "layanan $SERVICE_NAME dihapus"
 fi
+if have_systemd && [ -f "$HELPER_SOCKET_UNIT" ]; then
+    systemctl disable --now "$(basename "$HELPER_SOCKET_UNIT")" >/dev/null 2>&1 || true
+    rm -f "$HELPER_SOCKET_UNIT" "$HELPER_SERVICE_UNIT"
+    systemctl daemon-reload
+    # Disk yang sudah dipasang & entri fstab sengaja dibiarkan (data tidak disentuh).
+    ok "helper pemasangan disk dihapus (entri /etc/fstab dibiarkan)"
+fi
 case "$INSTALL_DIR" in
     /opt/*) rm -rf --one-file-system "$INSTALL_DIR"; ok "kode $INSTALL_DIR dihapus" ;;
     *) warn "INSTALL_DIR=$INSTALL_DIR di luar /opt, tidak dihapus otomatis" ;;

@@ -1217,6 +1217,36 @@
         "title": "MessageResponse",
         "type": "object"
       },
+      "MountPointRequest": {
+        "properties": {
+          "mount_point": {
+            "description": "Lokasi baru: /mnt/<nama>, /media/<nama>, atau /srv/<nama>",
+            "pattern": "^/(mnt|media|srv)/[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+            "title": "Mount Point",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount_point"
+        ],
+        "title": "MountPointRequest",
+        "type": "object"
+      },
+      "MountRequest": {
+        "properties": {
+          "uuid": {
+            "description": "UUID partisi dari daftar `partitions`",
+            "pattern": "^[0-9A-Fa-f][0-9A-Fa-f-]{3,63}$",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "title": "MountRequest",
+        "type": "object"
+      },
       "MoveFileRequest": {
         "properties": {
           "folder_id": {
@@ -1238,6 +1268,183 @@
           "folder_id"
         ],
         "title": "MoveFileRequest",
+        "type": "object"
+      },
+      "PartitionOut": {
+        "description": "Partisi (atau disk tanpa partisi) yang terdeteksi di server.",
+        "properties": {
+          "disk": {
+            "description": "Nama disk induk, mis. sda",
+            "title": "Disk",
+            "type": "string"
+          },
+          "fstype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fstype"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "mountpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mountpoint"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "path": {
+            "description": "Perangkat, mis. /dev/sda1",
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kode alasan bila tidak bisa dipakai",
+            "title": "Reason"
+          },
+          "reason_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Text"
+          },
+          "removable": {
+            "title": "Removable",
+            "type": "boolean"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ssd",
+                  "hdd"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sedang dipakai sebagai ssd/hdd",
+            "title": "Role"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "system": {
+            "description": "Bagian dari disk sistem (kartu SD/boot): tidak pernah bisa dipakai",
+            "title": "System",
+            "type": "boolean"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "usb, sata, nvme, ...",
+            "title": "Transport"
+          },
+          "usable": {
+            "description": "Bisa dipasang sebagai HDD",
+            "title": "Usable",
+            "type": "boolean"
+          },
+          "uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uuid"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "disk",
+          "size_bytes",
+          "fstype",
+          "uuid",
+          "label",
+          "model",
+          "transport",
+          "removable",
+          "mountpoint",
+          "system",
+          "usable",
+          "reason",
+          "reason_text",
+          "role"
+        ],
+        "title": "PartitionOut",
         "type": "object"
       },
       "PurgeResult": {
@@ -1376,6 +1583,157 @@
         "title": "RestoreResult",
         "type": "object"
       },
+      "RoleOut": {
+        "description": "Status satu peran disk (SSD utama / HDD backup) menurut konfigurasi di server.",
+        "properties": {
+          "can_mount": {
+            "description": "Disk bisa dipilih/dipasang dari aplikasi (hanya HDD)",
+            "title": "Can Mount",
+            "type": "boolean"
+          },
+          "can_unmount": {
+            "description": "Disk bisa dilepas dari aplikasi (hanya HDD yang terpasang)",
+            "title": "Can Unmount",
+            "type": "boolean"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "fstab_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fstab Uuid"
+          },
+          "fstype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fstype"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "managed": {
+            "description": "Entri /etc/fstab dikelola aplikasi",
+            "title": "Managed",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "mount_point": {
+            "title": "Mount Point",
+            "type": "string"
+          },
+          "mounted": {
+            "title": "Mounted",
+            "type": "boolean"
+          },
+          "paths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Path data di bawah mount point, mis. PRIMARY_STORAGE_PATH",
+            "title": "Paths",
+            "type": "object"
+          },
+          "role": {
+            "enum": [
+              "ssd",
+              "hdd"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uuid"
+          }
+        },
+        "required": [
+          "role",
+          "mount_point",
+          "paths",
+          "mounted",
+          "device",
+          "uuid",
+          "fstype",
+          "label",
+          "model",
+          "managed",
+          "fstab_uuid",
+          "total_bytes",
+          "free_bytes",
+          "can_mount",
+          "can_unmount"
+        ],
+        "title": "RoleOut",
+        "type": "object"
+      },
       "SessionOut": {
         "properties": {
           "created_at": {
@@ -1455,6 +1813,149 @@
         "title": "SessionOut",
         "type": "object"
       },
+      "SetupActionOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "job": {
+            "$ref": "#/components/schemas/SetupJobOut"
+          },
+          "restarting": {
+            "description": "true = server akan berhenti sebentar lalu jalan lagi; pantau GET /storage/setup/job",
+            "title": "Restarting",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "detail",
+          "restarting",
+          "job"
+        ],
+        "title": "SetupActionOut",
+        "type": "object"
+      },
+      "SetupJobOut": {
+        "description": "Operasi disk terakhir. Pindah lokasi mount berjalan di latar dan menjalankan ulang server.",
+        "properties": {
+          "detail": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Detail",
+            "type": "object"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "op": {
+            "enum": [
+              "mount",
+              "unmount",
+              "set_mount_point"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "ssd",
+              "hdd"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "op",
+          "role",
+          "status"
+        ],
+        "title": "SetupJobOut",
+        "type": "object"
+      },
+      "SetupJobResponse": {
+        "properties": {
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SetupJobOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "SetupJobResponse",
+        "type": "object"
+      },
       "StatisticsOut": {
         "properties": {
           "active_uploads": {
@@ -1499,6 +2000,63 @@
           "last_24h"
         ],
         "title": "StatisticsOut",
+        "type": "object"
+      },
+      "StorageSetupOut": {
+        "properties": {
+          "helper_available": {
+            "description": "false = helper belum terpasang; jalankan sudo ./scripts/update.sh",
+            "title": "Helper Available",
+            "type": "boolean"
+          },
+          "helper_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Helper Error"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SetupJobOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "partitions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PartitionOut"
+            },
+            "title": "Partitions",
+            "type": "array"
+          },
+          "restart_pending": {
+            "description": "Konfigurasi di disk berbeda dengan yang dipakai server berjalan (server sedang/perlu restart)",
+            "title": "Restart Pending",
+            "type": "boolean"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RoleOut"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "helper_available",
+          "restart_pending"
+        ],
+        "title": "StorageSetupOut",
         "type": "object"
       },
       "StorageStatusOut": {
@@ -5491,6 +6049,370 @@
           }
         ],
         "summary": "Hdd Status",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/setup": {
+      "get": {
+        "description": "Disk yang terdeteksi, status SSD/HDD, dan operasi terakhir.",
+        "operationId": "storage_setup_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Tidak terautentikasi"
+          },
+          "403": {
+            "description": "Bukan admin"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Body request terlalu besar"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorOut"
+                }
+              }
+            },
+            "description": "Input tidak valid"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "SSD atau database tidak tersedia (coba lagi; lihat header Retry-After)"
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Storage Setup Status",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/setup/job": {
+      "get": {
+        "description": "Status operasi disk terakhir (dipakai untuk memantau pindah lokasi mount).",
+        "operationId": "storage_setup_job",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Tidak terautentikasi"
+          },
+          "403": {
+            "description": "Bukan admin"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Body request terlalu besar"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorOut"
+                }
+              }
+            },
+            "description": "Input tidak valid"
+          },
+          "503": {
+            "description": "Helper belum terpasang"
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Storage Setup Job",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/setup/{role}/mount": {
+      "post": {
+        "description": "Pasang partisi terpilih sebagai HDD backup dan simpan ke /etc/fstab (nofail, berdasarkan UUID).\n\nTidak pernah memformat. Hanya partisi ext4/xfs/btrfs/f2fs. SSD tidak bisa dipasang dari aplikasi.",
+        "operationId": "storage_mount",
+        "parameters": [
+          {
+            "description": "ssd = penyimpanan utama, hdd = backup",
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "description": "ssd = penyimpanan utama, hdd = backup",
+              "enum": [
+                "ssd",
+                "hdd"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Tidak terautentikasi"
+          },
+          "403": {
+            "description": "Bukan admin"
+          },
+          "404": {
+            "description": "Partisi tidak ditemukan"
+          },
+          "409": {
+            "description": "Bentrok: disk/lokasi sedang dipakai, backup berjalan, atau operasi lain berjalan"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Body request terlalu besar"
+          },
+          "422": {
+            "description": "Input/disk tidak bisa dipakai (mis. disk sistem, filesystem bukan ext4)"
+          },
+          "502": {
+            "description": "Perintah sistem gagal (mount, fstab)"
+          },
+          "503": {
+            "description": "Helper belum terpasang"
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Storage Mount",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/setup/{role}/mount-point": {
+      "put": {
+        "description": "Pindahkan lokasi mount SSD/HDD (disk yang sama, data tetap).\n\nKonfigurasi, /etc/fstab, dan izin systemd diperbarui, lalu **server dijalankan ulang**\n(±10-30 detik). Bila server gagal jalan, pengaturan lama dipulihkan otomatis.\nPantau hasilnya di GET /storage/setup/job setelah server kembali.",
+        "operationId": "storage_set_mount_point",
+        "parameters": [
+          {
+            "description": "ssd = penyimpanan utama, hdd = backup",
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "description": "ssd = penyimpanan utama, hdd = backup",
+              "enum": [
+                "ssd",
+                "hdd"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MountPointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Tidak terautentikasi"
+          },
+          "403": {
+            "description": "Bukan admin"
+          },
+          "404": {
+            "description": "Partisi tidak ditemukan"
+          },
+          "409": {
+            "description": "Bentrok: disk/lokasi sedang dipakai, backup berjalan, atau operasi lain berjalan"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Body request terlalu besar"
+          },
+          "422": {
+            "description": "Input/disk tidak bisa dipakai (mis. disk sistem, filesystem bukan ext4)"
+          },
+          "502": {
+            "description": "Perintah sistem gagal (mount, fstab)"
+          },
+          "503": {
+            "description": "Helper belum terpasang"
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Storage Set Mount Point",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/api/v1/storage/setup/{role}/unmount": {
+      "post": {
+        "description": "Lepas HDD dan hapus entrinya dari /etc/fstab. Data di disk tidak dihapus; aman dicabut sesudahnya.",
+        "operationId": "storage_unmount",
+        "parameters": [
+          {
+            "description": "ssd = penyimpanan utama, hdd = backup",
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "description": "ssd = penyimpanan utama, hdd = backup",
+              "enum": [
+                "ssd",
+                "hdd"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Tidak terautentikasi"
+          },
+          "403": {
+            "description": "Bukan admin"
+          },
+          "404": {
+            "description": "Partisi tidak ditemukan"
+          },
+          "409": {
+            "description": "Bentrok: disk/lokasi sedang dipakai, backup berjalan, atau operasi lain berjalan"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Body request terlalu besar"
+          },
+          "422": {
+            "description": "Input/disk tidak bisa dipakai (mis. disk sistem, filesystem bukan ext4)"
+          },
+          "502": {
+            "description": "Perintah sistem gagal (mount, fstab)"
+          },
+          "503": {
+            "description": "Helper belum terpasang"
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Storage Unmount",
         "tags": [
           "storage"
         ]

@@ -1,0 +1,31 @@
+# Helper root pemasangan SSD/HDD, satu proses per permintaan dari server.
+# Dipasang oleh scripts/install_pi.sh (placeholder @...@ diganti otomatis).
+#
+# Sengaja TANPA opsi yang membuat mount namespace sendiri (ProtectSystem, ProtectHome,
+# PrivateTmp, PrivateDevices, ReadWritePaths, ...): disk yang di-mount helper harus terlihat
+# oleh seluruh sistem, bukan hanya di dalam namespace helper. Keamanannya ada di helper itu
+# sendiri (validasi ketat, tanpa format/hapus) dan di izin socket (hanya grup layanan).
+[Unit]
+Description=Server_penyimpanan - helper pemasangan SSD/HDD
+CollectMode=inactive-or-failed
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I @INSTALL_DIR@/scripts/storage_helper.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+Environment=SP_CONFIG_FILE=@CONFIG_FILE@ SP_UNIT_FILE=@UNIT_FILE@
+Environment=SP_SERVICE_NAME=@SERVICE_NAME@ SP_SERVICE_USER=@SERVICE_USER@
+StateDirectory=server-penyimpanan-storage
+StateDirectoryMode=0700
+# Operasi terlama (pindah lokasi mount + restart server) selesai jauh di bawah ini.
+RuntimeMaxSec=600
+MemoryMax=128M
+TasksMax=32
+UMask=0022
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native

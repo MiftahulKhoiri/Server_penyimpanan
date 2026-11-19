@@ -32,10 +32,11 @@ MemoryMax=650M
 TasksMax=64
 LimitNOFILE=4096
 
-# Hardening: proses hanya bisa menulis ke SSD & HDD
+# Hardening: proses hanya bisa menulis ke SSD & HDD (+ socket helper pemasangan disk).
+# Baris ReadWritePaths diperbarui otomatis bila lokasi mount diubah dari aplikasi.
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=-@PRIMARY_MOUNT@ -@BACKUP_MOUNT@
+ReadWritePaths=-@PRIMARY_MOUNT@ -@BACKUP_MOUNT@ -/run/server-penyimpanan-storage
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

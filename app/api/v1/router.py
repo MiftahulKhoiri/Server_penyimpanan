@@ -9,6 +9,7 @@ from app.api.v1 import (
     folders,
     media,
     storage,
+    storage_setup,
     system,
     trash,
     uploads,
@@ -21,6 +22,7 @@ api_router.include_router(folders.router)
 api_router.include_router(uploads.router)
 api_router.include_router(media.router)
 api_router.include_router(storage.router)
+api_router.include_router(storage_setup.router)
 api_router.include_router(trash.router)
 api_router.include_router(activity.router)
 api_router.include_router(admin.router)
