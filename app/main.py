@@ -27,7 +27,7 @@ from app.core.rate_limit import LoginRateLimiter
 from app.core.security import SecurityService
 from app.database.session import Database
 from app.services import trash_service
-from app.services.activity_service import log_activity
+from app.services.activity_service import log_activity, purge_old_activity
 from app.services.backup_pin import drain_pending
 from app.services.backup_service import (
     BackupManager,
@@ -68,6 +68,7 @@ def run_maintenance_once(app: FastAPI) -> dict[str, int] | None:
         stats = cleanup_uploads(db, storage, app.state.upload_hashes)
         stats["trash_purged"] = trash_service.purge_expired(db, storage)
         stats["pending_deletes_removed"] = drain_pending(storage.root)
+        stats["activity_purged"] = purge_old_activity(db, settings.ACTIVITY_RETENTION_DAYS)
         stats["auto_backup_started"] = int(
             maybe_start_auto_backup(db, settings, app.state.backup_manager) is not None
         )
@@ -157,6 +158,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.backup_manager = BackupManager(app.state.database, settings)
     app.state.upload_hashes = UploadHashRegistry()
     app.state.upload_locks = UploadLocks()
+    # Antrean pembuatan thumbnail (1 sekaligus) di event loop, tanpa memegang thread pool.
+    app.state.thumbnail_gate = asyncio.Semaphore(1)
     app.state.uploads_recovered = False
     app.state.started_monotonic = time.monotonic()
     prime_cpu_counter()

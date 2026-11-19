@@ -46,7 +46,7 @@ TERMINAL = (UploadStatus.COMPLETED.value, UploadStatus.FAILED.value,
 @dataclass
 class _HashState:
     next_index: int
-    hasher: "hashlib._Hash | None"  # None = tidak valid, hitung ulang saat complete
+    hasher: hashlib._Hash | None  # None = tidak valid, hitung ulang saat complete
 
 
 class UploadHashRegistry:
@@ -58,7 +58,7 @@ class UploadHashRegistry:
         self._states: dict[str, _HashState] = {}
         self._lock = threading.Lock()
 
-    def begin_chunk(self, upload_id: str, index: int) -> "hashlib._Hash | None":
+    def begin_chunk(self, upload_id: str, index: int) -> hashlib._Hash | None:
         with self._lock:
             state = self._states.get(upload_id)
             if state is None:
@@ -67,7 +67,7 @@ class UploadHashRegistry:
                 return state.hasher.copy()
             return None
 
-    def commit_chunk(self, upload_id: str, index: int, hasher: "hashlib._Hash | None", *, same_as_before: bool) -> None:
+    def commit_chunk(self, upload_id: str, index: int, hasher: hashlib._Hash | None, *, same_as_before: bool) -> None:
         with self._lock:
             state = self._states.get(upload_id)
             if hasher is not None and (state is None and index == 0 or state is not None and state.next_index == index):

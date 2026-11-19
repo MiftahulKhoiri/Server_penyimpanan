@@ -1,6 +1,7 @@
 # Server_penyimpanan
 
-Backend **Personal Cloud Storage** untuk Raspberry Pi 3 Model B+ (RAM 1 GB) yang dipakai aplikasi
+Backend **Personal Cloud Storage** untuk Raspberry Pi 3 Model B+ (RAM 1 GB) ke atas (Pi 4/5 juga bisa; lihat
+setelan yang disarankan di [`.env.example`](.env.example)) yang dipakai aplikasi
 Android untuk menyimpan, melihat, mengunggah, dan mengunduh foto, video, serta dokumen.
 Dibangun dengan FastAPI, Uvicorn, SQLite, dan SQLAlchemy, tanpa Docker dan tanpa layanan cloud.
 Data disimpan di SSD dan di-backup ke HDD.

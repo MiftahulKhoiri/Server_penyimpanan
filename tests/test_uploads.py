@@ -13,7 +13,13 @@ from app.main import run_maintenance_once
 from app.models import ActivityLog, Upload, User
 from app.services.storage_paths import StoragePaths
 from app.services.upload_service import cleanup_uploads
-from tests.conftest import JPEG_HEAD, auth_header, create_user_direct, login, storage_root
+from tests.conftest import (
+    JPEG_HEAD,
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+)
 
 API = "/api/v1/uploads"
 

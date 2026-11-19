@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import threading
 from datetime import timedelta
 from pathlib import Path
 from shutil import disk_usage
@@ -17,7 +18,12 @@ from app.core.errors import AppError, conflict, not_found
 from app.database.types import new_uuid, utcnow
 from app.models import Folder, StoredFile, TrashItem, Upload, UploadStatus, User
 from app.services.activity_service import log_activity
-from app.services.storage_paths import DIR_MODE, StoragePaths, UnsafePathError, fsync_dir
+from app.services.storage_paths import (
+    DIR_MODE,
+    StoragePaths,
+    UnsafePathError,
+    fsync_dir,
+)
 from app.utils.filenames import numbered_name, split_extension
 from app.utils.images import image_dimensions
 from app.utils.mime import SNIFF_BYTES, MimeMismatch, decide_mime
@@ -123,15 +129,70 @@ def _active_uploads_bytes(db: Session, owner_id: int | None, *, remaining: bool)
     return int(db.scalar(query) or 0)
 
 
+class _Reservations:
+    """Ruang yang sedang dipakai upload sekali kirim (belum tercatat di DB).
+
+    Upload chunked sudah tercatat di tabel uploads; upload sekali kirim baru tercatat saat selesai,
+    jadi tanpa ini beberapa upload paralel bisa lolos cek kuota bersama-sama lalu melampauinya.
+    Disimpan di memori proses (server memang wajib 1 worker).
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.per_user: dict[int, int] = {}
+        self.total = 0
+
+    def for_user(self, user_id: int) -> int:
+        return self.per_user.get(user_id, 0)
+
+
+_reservations = _Reservations()
+
+
+class CapacityReservation:
+    def __init__(self, user_id: int, amount: int) -> None:
+        self.user_id = user_id
+        self.amount = amount
+        self._released = False
+
+    def release(self) -> None:
+        with _reservations.lock:
+            if self._released:
+                return
+            self._released = True
+            _reservations.total -= self.amount
+            left = _reservations.per_user.get(self.user_id, 0) - self.amount
+            if left > 0:
+                _reservations.per_user[self.user_id] = left
+            else:
+                _reservations.per_user.pop(self.user_id, None)
+
+
 def ensure_capacity(db: Session, settings: Settings, storage: StoragePaths, user: User, incoming: int) -> None:
     if user.storage_quota_bytes is not None:
-        used = storage_used_bytes(db, user.id) + _active_uploads_bytes(db, user.id, remaining=False)
+        used = (
+            storage_used_bytes(db, user.id)
+            + _active_uploads_bytes(db, user.id, remaining=False)
+            + _reservations.for_user(user.id)
+        )
         if used + incoming > user.storage_quota_bytes:
             raise AppError(507, "quota_exceeded", "Kuota penyimpanan Anda tidak cukup")
     free = disk_usage(storage.root).free
-    reserved = _active_uploads_bytes(db, None, remaining=True)
+    reserved = _active_uploads_bytes(db, None, remaining=True) + _reservations.total
     if free - reserved - incoming < settings.MIN_FREE_SPACE_BYTES:
         raise AppError(507, "insufficient_storage", "Ruang penyimpanan server tidak cukup")
+
+
+def reserve_capacity(
+    db: Session, settings: Settings, storage: StoragePaths, user: User, incoming: int
+) -> CapacityReservation:
+    """Cek kapasitas lalu pesan `incoming` byte secara atomik. Wajib di-release() setelah selesai
+    (berhasil atau gagal). Selama dipesan, ruang ini ikut dihitung oleh ensure_capacity."""
+    with _reservations.lock:
+        ensure_capacity(db, settings, storage, user, incoming)
+        _reservations.total += incoming
+        _reservations.per_user[user.id] = _reservations.for_user(user.id) + incoming
+    return CapacityReservation(user.id, incoming)
 
 
 def physical_path(storage: StoragePaths, row: StoredFile) -> Path:

@@ -10,8 +10,11 @@ plugins {
 // Nomor versi dari CI (GITHUB_RUN_NUMBER) agar setiap APK bisa dipasang menimpa versi lama.
 val ciBuildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
 
-// Kunci penandatanganan rilis: dari environment (secret CI) bila ada, selain itu kunci
-// debug tetap yang disimpan di repo (agar update APK tetap bisa dipasang di atas versi lama).
+// Kunci penandatanganan rilis WAJIB dari environment (secret CI / mesin lokal).
+// Kunci debug ada di repo publik, jadi siapa pun bisa membuat APK "update" palsu bila APK
+// rilis ditandatangani dengannya. Karena itu build rilis GAGAL bila kunci rilis tidak ada,
+// kecuali diizinkan eksplisit untuk uji lokal: ./gradlew assembleRelease -Ppenyimpanan.allowDebugSigning
+val allowDebugSigning = providers.gradleProperty("penyimpanan.allowDebugSigning").isPresent
 val releaseSigning = Properties().apply {
     val path = System.getenv("ANDROID_KEYSTORE_PATH")
     if (path != null && file(path).exists()) {
@@ -47,17 +50,12 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        create("release") {
-            if (releaseSigning.containsKey("storeFile")) {
+        if (releaseSigning.containsKey("storeFile")) {
+            create("release") {
                 storeFile = file(releaseSigning.getProperty("storeFile"))
                 storePassword = releaseSigning.getProperty("storePassword")
                 keyAlias = releaseSigning.getProperty("keyAlias")
                 keyPassword = releaseSigning.getProperty("keyPassword")
-            } else {
-                storeFile = rootProject.file("signing/debug.keystore")
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
             }
         }
     }
@@ -71,7 +69,11 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = when {
+                releaseSigning.containsKey("storeFile") -> signingConfigs.getByName("release")
+                allowDebugSigning -> signingConfigs.getByName("debug")
+                else -> null
+            }
         }
     }
 
@@ -128,6 +130,18 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+}
+
+// Gagal di awal (sebelum kompilasi) bila build rilis diminta tanpa kunci rilis.
+gradle.taskGraph.whenReady {
+    val wantsRelease = allTasks.any { it.project == project && it.name.matches(Regex("(assemble|bundle|package)Release")) }
+    if (wantsRelease && !releaseSigning.containsKey("storeFile") && !allowDebugSigning) {
+        throw GradleException(
+            "Kunci rilis tidak ditemukan. Set ANDROID_KEYSTORE_PATH/ANDROID_KEYSTORE_PASSWORD/" +
+                "ANDROID_KEY_ALIAS/ANDROID_KEY_PASSWORD (lihat android/README.md), atau untuk uji lokal " +
+                "saja tambahkan -Ppenyimpanan.allowDebugSigning (JANGAN untuk APK yang dibagikan)."
+        )
+    }
 }
 
 if (localArm64) {

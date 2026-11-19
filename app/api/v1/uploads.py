@@ -16,7 +16,13 @@ from app.api.v1.files import write_all
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.core.errors import AppError, unprocessable
 from app.models import Upload, UploadStatus
-from app.schemas.files import ChunkResult, FileOut, UploadCompleteOut, UploadInitRequest, UploadOut
+from app.schemas.files import (
+    ChunkResult,
+    FileOut,
+    UploadCompleteOut,
+    UploadInitRequest,
+    UploadOut,
+)
 from app.services import upload_service
 from app.services.upload_locks import UploadLocks
 from app.services.upload_service import UploadHashRegistry
@@ -105,7 +111,7 @@ async def upload_chunk(
         return await _write_chunk(upload_id, chunk_index, request, user.id, db, settings, storage, x_chunk_sha256)
 
 
-async def _write_chunk(  # noqa: PLR0913
+async def _write_chunk(
     upload_id: str,
     chunk_index: int,
     request: Request,

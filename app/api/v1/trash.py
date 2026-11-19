@@ -5,7 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
-from app.schemas.records import EmptyTrashResult, PurgeResult, RestoreResult, TrashItemOut, TrashList
+from app.schemas.records import (
+    EmptyTrashResult,
+    PurgeResult,
+    RestoreResult,
+    TrashItemOut,
+    TrashList,
+)
 from app.services import trash_service
 from app.utils.request_info import client_info
 

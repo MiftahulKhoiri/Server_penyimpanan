@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select, update
@@ -11,7 +13,14 @@ from app.database import migrate
 from app.database.session import Database, make_engine
 from app.models import StoredFile, User
 from app.services import file_service
-from tests.conftest import auth_header, create_user_direct, login, make_settings, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    make_settings,
+    storage_root,
+    upload_simple,
+)
 
 
 @pytest.fixture
@@ -101,7 +110,7 @@ def test_copy_failure_cleans_up(lenient_user, monkeypatch):
     before = _files_on_disk(c)
 
     def broken_copy(src, dst):
-        open(dst, "wb").write(b"setengah")
+        Path(dst).write_bytes(b"setengah")
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(file_service.shutil, "copyfile", broken_copy)
@@ -205,11 +214,11 @@ def test_refresh_for_deactivated_user_revokes_session(client):
 def test_token_with_non_numeric_subject_rejected(client):
     create_user_direct(client, "budi")
     tokens = login(client, "budi")
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     import jwt
 
-    now = int(datetime.now(timezone.utc).timestamp())
+    now = int(datetime.now(UTC).timestamp())
     token = jwt.encode(
         {"sub": "bukan-angka", "sid": tokens["session_id"], "type": "access", "iss": "Server_penyimpanan",
          "iat": now, "exp": now + 60},

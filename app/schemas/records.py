@@ -22,7 +22,7 @@ class TrashItemOut(BaseModel):
     purge_after: datetime
 
     @classmethod
-    def from_model(cls, item: TrashItem) -> "TrashItemOut":
+    def from_model(cls, item: TrashItem) -> TrashItemOut:
         return cls(
             id=item.file_id or item.folder_id or "",
             type="file" if item.file_id else "folder",
@@ -83,7 +83,7 @@ class BackupJobOut(BaseModel):
     report: dict[str, Any] | None = None
 
     @classmethod
-    def from_model(cls, job: BackupJob, *, with_report: bool = True) -> "BackupJobOut":
+    def from_model(cls, job: BackupJob, *, with_report: bool = True) -> BackupJobOut:
         report = None
         if with_report and job.report:
             try:
@@ -118,7 +118,7 @@ class ActivityOut(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_model(cls, row: ActivityLog) -> "ActivityOut":
+    def from_model(cls, row: ActivityLog) -> ActivityOut:
         try:
             details = json.loads(row.details) if row.details else None
         except ValueError:

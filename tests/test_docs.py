@@ -56,7 +56,7 @@ def test_streaming_uploads_declare_binary_body(client):
 def test_openapi_json_is_up_to_date():
     result = subprocess.run(
         [sys.executable, "-W", "ignore", str(PROJECT_ROOT / "scripts" / "export_openapi.py"), "--check"],
-        capture_output=True, text=True, timeout=120,
+        check=False, capture_output=True, text=True, timeout=120,
     )
     assert result.returncode == 0, result.stderr
 
@@ -131,7 +131,7 @@ def test_documented_admin_only_endpoints_reject_users(client):
 
 
 def test_api_doc_json_examples_are_valid_json():
-    for block in re.findall(r"```json\n(.*?)```", API_DOC, re.S):
+    for block in re.findall(r"```json\n(.*?)```", API_DOC, re.DOTALL):
         cleaned = block.replace("…", "x").replace("[...]", "[]").replace("{...status \"completed\"...}", "{}")
         try:
             json.loads(cleaned)

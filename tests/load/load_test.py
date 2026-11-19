@@ -23,6 +23,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import httpx
 
@@ -157,7 +158,7 @@ def main() -> int:
     def watch() -> None:
         while args.pid and not stop.is_set():
             try:
-                rss = int(open(f"/proc/{args.pid}/status").read().split("VmRSS:")[1].split()[0])
+                rss = int(Path(f"/proc/{args.pid}/status").read_text().split("VmRSS:")[1].split()[0])
                 peak[0] = max(peak[0], rss)
             except OSError:
                 pass
@@ -179,7 +180,7 @@ def main() -> int:
         for f in futures:
             try:
                 f.result()
-            except Exception as exc:  # error di klien juga dihitung
+            except Exception as exc:  # noqa: BLE001 - error di klien juga dihitung
                 stats.fail(f"klien: {exc!r}")
     stop.set()
     elapsed = time.monotonic() - started

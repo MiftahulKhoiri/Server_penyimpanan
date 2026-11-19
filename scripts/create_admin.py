@@ -16,16 +16,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pydantic import ValidationError  # noqa: E402
+from pydantic import ValidationError
 
-from app.core.config import get_settings  # noqa: E402
-from app.core.errors import AppError  # noqa: E402
-from app.core.security import SecurityService  # noqa: E402
-from app.database.session import Database  # noqa: E402
-from app.models import Role  # noqa: E402
-from app.schemas.auth import normalize_email, normalize_username  # noqa: E402
-from app.services import auth_service  # noqa: E402
-from app.services.activity_service import log_activity  # noqa: E402
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.security import SecurityService
+from app.database.session import Database
+from app.models import Role
+from app.schemas.auth import normalize_email, normalize_username
+from app.services import auth_service
+from app.services.activity_service import log_activity
 
 
 def main() -> int:

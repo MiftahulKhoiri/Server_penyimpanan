@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from tests.conftest import DEFAULT_PASSWORD, auth_header, create_user_direct, login, upload_simple
+from tests.conftest import (
+    DEFAULT_PASSWORD,
+    auth_header,
+    create_user_direct,
+    login,
+    upload_simple,
+)
 
 
 def test_my_activity_only_mine_with_filters(user_client):

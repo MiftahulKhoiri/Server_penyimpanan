@@ -12,7 +12,13 @@ from pathlib import Path
 import pytest
 
 from app.core.config import PROJECT_ROOT
-from tests.conftest import auth_header, create_user_direct, login, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+    upload_simple,
+)
 
 SCRIPTS = PROJECT_ROOT / "scripts"
 
@@ -86,7 +92,7 @@ def test_check_storage_cli_json(tmp_path):
                    f"BACKUP_STORAGE_PATH={tmp_path}/hdd/b\n")
     result = subprocess.run(
         [sys.executable, str(SCRIPTS / "check_storage.py"), "--env-file", str(env), "--json", "--fstab", "/dev/null"],
-        capture_output=True, text=True, timeout=30,
+        check=False, capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 1
     assert '"ok": false' in result.stdout
@@ -175,7 +181,7 @@ def test_backup_now_cli(tmp_path, make_client):
         "BACKUP_STORAGE_PATH": str(s.BACKUP_STORAGE_PATH),
     }
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS / "backup_now.py")], capture_output=True, text=True, timeout=60,
+        [sys.executable, str(SCRIPTS / "backup_now.py")], check=False, capture_output=True, text=True, timeout=60,
         env=env, cwd=tmp_path,
     )
     assert result.returncode == 0, result.stderr

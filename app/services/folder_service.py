@@ -115,9 +115,10 @@ def move_folder(db: Session, user: User, folder: Folder, new_parent_id: str | No
     target = resolve_folder_id(db, user.id, new_parent_id)
     if target == folder.parent_id:
         return folder
-    if target is not None:
-        if target == folder.id or any(f.id == folder.id for f in ancestors(db, get_owned_folder(db, user.id, target))):
-            raise conflict("folder_cycle", "Folder tidak bisa dipindah ke dalam dirinya sendiri atau turunannya")
+    if target is not None and (
+        target == folder.id or any(f.id == folder.id for f in ancestors(db, get_owned_folder(db, user.id, target)))
+    ):
+        raise conflict("folder_cycle", "Folder tidak bisa dipindah ke dalam dirinya sendiri atau turunannya")
     tree = _subtree(folder.id)
     subtree_height = int(db.scalar(select(func.max(tree.c.level))) or 0)
     if _depth(db, target) + 1 + subtree_height > MAX_FOLDER_DEPTH:

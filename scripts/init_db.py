@@ -12,12 +12,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pydantic import ValidationError  # noqa: E402
+from pydantic import ValidationError
 
-from app.core.config import get_settings  # noqa: E402
-from app.database import migrate  # noqa: E402
-from app.database.session import make_engine  # noqa: E402
-from app.services.storage_guard import check_location  # noqa: E402
+from app.core.config import get_settings
+from app.database import migrate
+from app.database.session import make_engine
+from app.services.storage_guard import check_location
 
 
 def main() -> int:

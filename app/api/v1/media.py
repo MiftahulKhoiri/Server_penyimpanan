@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.api.v1.files import FILE_SECURITY_HEADERS
+from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.core.errors import AppError
 from app.models import MediaType
 from app.schemas.files import FileList, FileOut, SortField, SortOrder
@@ -107,12 +108,33 @@ def stream_media(file_id: str, request: Request, user: CurrentUser, db: DbSessio
 async def thumbnail(
     file_id: str, request: Request, user: CurrentUser, db: DbSession, settings: SettingsDep, storage: StorageDep
 ) -> FileResponse:
-    """Thumbnail JPEG (sisi terpanjang THUMBNAIL_SIZE px). Dibuat sekali lalu di-cache."""
-    row = file_service.get_owned_file(db, user.id, file_id)
+    """Thumbnail JPEG (sisi terpanjang THUMBNAIL_SIZE px). Dibuat sekali lalu di-cache.
+
+    Bila server sedang membuat thumbnail lain terlalu lama, dibalas 503 + `Retry-After`.
+    """
+    # Query SQLite di thread pool agar event loop tidak tertahan.
+    row = await run_in_threadpool(file_service.get_owned_file, db, user.id, file_id)
     etag = f'"{row.sha256[:32]}-{settings.THUMBNAIL_SIZE}"'
     if request.headers.get("if-none-match") == etag and row.thumbnail_path:
         return Response(status_code=304, headers={"ETag": etag})  # type: ignore[return-value]
-    path = await run_in_threadpool(media_service.get_or_create_thumbnail, db, settings, storage, row)
+
+    path = None
+    if media_service.thumbnail_supported(settings, row):
+        path = await run_in_threadpool(media_service.cached_thumbnail, storage, row)
+    if path is None:
+        # Antre di event loop (semaphore asyncio), BUKAN di thread pool: request yang menunggu
+        # giliran tidak memegang thread, jadi endpoint lain tetap jalan saat galeri dibuka.
+        gate: asyncio.Semaphore = request.app.state.thumbnail_gate
+        try:
+            await asyncio.wait_for(gate.acquire(), timeout=media_service.QUEUE_WAIT_SECONDS)
+        except TimeoutError:
+            raise AppError(
+                503, "thumbnail_busy", "Server sedang membuat thumbnail lain, coba lagi", {"Retry-After": "5"}
+            ) from None
+        try:
+            path = await run_in_threadpool(media_service.get_or_create_thumbnail, db, settings, storage, row)
+        finally:
+            gate.release()
     return FileResponse(
         path, media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=86400", "ETag": etag},

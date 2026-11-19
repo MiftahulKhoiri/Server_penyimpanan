@@ -45,8 +45,19 @@ penyimpanan.localArm64=true
 Mode ini memakai compileSdk 34. APK untuk dipasang sebaiknya tetap dari GitHub Actions.
 
 ## Penandatanganan APK
-- Tanpa pengaturan tambahan, APK ditandatangani `signing/debug.keystore` (kunci debug publik di repo) agar update bisa menimpa versi lama.
-- **Risiko**: karena kunci itu publik, orang lain bisa membuat APK palsu yang bisa menimpa aplikasi Anda. Pasang APK hanya dari rilis repo ini. Untuk keamanan lebih, buat kunci rilis sendiri dan isi secrets GitHub `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` (APK dengan kunci baru harus di-uninstall dulu sekali).
+APK rilis **wajib** ditandatangani kunci rilis sendiri. `signing/debug.keystore` hanya untuk build debug: kunci itu publik di repo, jadi APK rilis yang ditandatangani dengannya bisa ditimpa APK palsu buatan siapa pun. Build rilis (`assembleRelease`) dan workflow CI sengaja **gagal** bila kunci rilis tidak ada.
+
+Sekali saja, buat kunci rilis (simpan file & password-nya baik-baik; kalau hilang, update APK tidak bisa dipasang menimpa versi lama):
+```bash
+keytool -genkeypair -v -keystore penyimpanan-release.jks -alias penyimpanan \
+  -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 penyimpanan-release.jks   # isi untuk secret ANDROID_KEYSTORE_BASE64
+```
+Lalu di GitHub: *Settings → Secrets and variables → Actions*, isi `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`penyimpanan`), `ANDROID_KEY_PASSWORD`.
+
+APK lama yang ditandatangani kunci debug harus di-**uninstall** sekali sebelum memasang APK dengan kunci baru (login ulang sesudahnya).
+
+Build rilis lokal: set `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Khusus uji coba yang tidak dibagikan, boleh `./gradlew assembleRelease -Ppenyimpanan.allowDebugSigning`.
 
 ## Catatan keamanan
 - Koneksi HTTP biasa (tanpa TLS) diizinkan karena server dipakai di jaringan rumah / Tailscale. Jangan buka port server langsung ke internet tanpa HTTPS.

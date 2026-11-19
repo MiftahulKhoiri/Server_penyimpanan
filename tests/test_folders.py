@@ -4,7 +4,13 @@ from sqlalchemy import func, select
 
 from app.models import Folder, StoredFile, TrashItem
 from app.services.folder_service import MAX_FOLDER_DEPTH
-from tests.conftest import auth_header, create_user_direct, login, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+    upload_simple,
+)
 
 API = "/api/v1/folders"
 

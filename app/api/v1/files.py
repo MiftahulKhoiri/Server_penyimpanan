@@ -14,6 +14,7 @@ from starlette.requests import ClientDisconnect
 from app.api.openapi_meta import binary_body
 from app.core.dependencies import CurrentUser, DbSession, SettingsDep, StorageDep
 from app.core.errors import AppError, unprocessable
+from app.models import StoredFile
 from app.schemas.files import (
     CopyFileRequest,
     FileList,
@@ -109,8 +110,26 @@ async def upload_simple(
 
     file_service.ensure_extension_allowed(settings, name)
     target = await run_in_threadpool(file_service.resolve_folder_id, db, user.id, folder_id)
-    await run_in_threadpool(file_service.ensure_capacity, db, settings, storage, user, length)
+    # Cek + pesan kapasitas secara atomik: upload paralel tidak bisa lolos cek kuota bersamaan.
+    reservation = await run_in_threadpool(file_service.reserve_capacity, db, settings, storage, user, length)
+    try:
+        row = await _receive_simple(request, db, settings, storage, user, target, name, length, x_content_sha256)
+    finally:
+        reservation.release()
+    return FileOut.from_model(row)
 
+
+async def _receive_simple(
+    request: Request,
+    db: DbSession,
+    settings: SettingsDep,
+    storage: StorageDep,
+    user: CurrentUser,
+    target: str | None,
+    name: str,
+    length: int,
+    x_content_sha256: str | None,
+) -> StoredFile:
     temp = storage.new_temp_file("simple")
     hasher = hashlib.sha256()
     received = 0
@@ -140,12 +159,11 @@ async def upload_simple(
     if x_content_sha256 and digest != x_content_sha256.lower():
         temp.unlink(missing_ok=True)
         raise AppError(422, "checksum_mismatch", "SHA-256 file tidak cocok")
-    row = await run_in_threadpool(
+    return await run_in_threadpool(
         file_service.finalize_new_file, db, settings, storage, user,
         folder_id=target, name=name, temp_path=temp, size=received, sha256=digest,
         client=client_info(request), details={"method": "simple"},
     )
-    return FileOut.from_model(row)
 
 
 @router.get("/{file_id}", response_model=FileOut)

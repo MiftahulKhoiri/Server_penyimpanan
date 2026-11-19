@@ -9,7 +9,13 @@ from sqlalchemy import func, select, update
 from app.database.types import utcnow
 from app.main import run_maintenance_once
 from app.models import ActivityLog, Folder, StoredFile, TrashItem
-from tests.conftest import auth_header, create_user_direct, login, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+    upload_simple,
+)
 
 API = "/api/v1/trash"
 

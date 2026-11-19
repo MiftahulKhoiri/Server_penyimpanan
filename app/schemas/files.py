@@ -36,7 +36,7 @@ class FileOut(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, row: StoredFile) -> "FileOut":
+    def from_model(cls, row: StoredFile) -> FileOut:
         out = cls.model_validate(row)
         out.has_thumbnail = row.thumbnail_path is not None
         return out

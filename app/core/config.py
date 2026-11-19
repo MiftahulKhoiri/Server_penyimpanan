@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # --- Trash ---
     TRASH_RETENTION_DAYS: int = Field(30, ge=1, le=3650)
 
+    # --- Activity log ---
+    # Entri lebih tua dari ini dihapus oleh pemeliharaan berkala. 0 = simpan selamanya.
+    ACTIVITY_RETENTION_DAYS: int = Field(180, ge=0, le=3650)
+
     # --- Backup ke HDD ---
     # 0 = backup otomatis mati (default). Backup tidak pernah menghapus file asli.
     BACKUP_AUTO_INTERVAL_HOURS: int = Field(0, ge=0, le=24 * 30)
@@ -158,13 +162,13 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _validate_upload(self) -> "Settings":
+    def _validate_upload(self) -> Settings:
         if not (self.UPLOAD_CHUNK_SIZE_MIN <= self.UPLOAD_CHUNK_SIZE_DEFAULT <= self.UPLOAD_CHUNK_SIZE_MAX):
             raise ValueError("Harus UPLOAD_CHUNK_SIZE_MIN <= UPLOAD_CHUNK_SIZE_DEFAULT <= UPLOAD_CHUNK_SIZE_MAX")
         return self
 
     @model_validator(mode="after")
-    def _validate_paths(self) -> "Settings":
+    def _validate_paths(self) -> Settings:
         paths = {
             "PRIMARY_STORAGE_PATH": self.PRIMARY_STORAGE_PATH,
             "BACKUP_STORAGE_PATH": self.BACKUP_STORAGE_PATH,

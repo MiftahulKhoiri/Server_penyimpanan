@@ -9,7 +9,13 @@ from PIL import Image
 
 from app.models import StoredFile
 from app.services import media_service
-from tests.conftest import auth_header, create_user_direct, login, storage_root, upload_simple
+from tests.conftest import (
+    auth_header,
+    create_user_direct,
+    login,
+    storage_root,
+    upload_simple,
+)
 
 API = "/api/v1/media"
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None

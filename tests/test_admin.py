@@ -94,7 +94,7 @@ def test_admin_delete_user_with_data_refused(client):
 
 
 def test_last_admin_protected(client):
-    uid, h = _admin(client)
+    uid, _h = _admin(client)
     other = create_user_direct(client, "admin2", role="admin")
     h2 = auth_header(login(client, "admin2"))
     # admin2 menonaktifkan admin pertama -> boleh (masih ada admin2).

@@ -17,5 +17,5 @@ def image_dimensions(path: Path, mime: str) -> tuple[int | None, int | None]:
         with Image.open(path) as img:
             width, height = img.size
             return int(width), int(height)
-    except Exception:
+    except Exception:  # noqa: BLE001 - header rusak bisa memicu error jenis apa pun di Pillow
         return None, None

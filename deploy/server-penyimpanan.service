@@ -25,7 +25,8 @@ RestartSec=5
 TimeoutStopSec=30
 UMask=0077
 
-# Batas sumber daya untuk Raspberry Pi 3 (RAM 1 GB)
+# Batas sumber daya untuk Raspberry Pi 3 (RAM 1 GB). Pi 4/5 (RAM >= 4 GB): boleh dinaikkan lewat
+# `sudo systemctl edit server-penyimpanan` (mis. MemoryHigh=1G, MemoryMax=1500M) tanpa mengubah file ini.
 MemoryHigh=450M
 MemoryMax=650M
 TasksMax=64

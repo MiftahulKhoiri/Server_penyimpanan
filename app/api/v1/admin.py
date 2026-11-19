@@ -5,7 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request, status
 
 from app.core.dependencies import AdminUser, DbSession, SecurityDep, SettingsDep
-from app.schemas.user import AdminUserCreate, AdminUserUpdate, MessageResponse, UserList, UserOut
+from app.schemas.user import (
+    AdminUserCreate,
+    AdminUserUpdate,
+    MessageResponse,
+    UserList,
+    UserOut,
+)
 from app.services import auth_service, user_service
 from app.services.activity_service import log_activity
 from app.utils.request_info import client_info

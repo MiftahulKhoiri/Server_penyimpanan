@@ -5129,7 +5129,7 @@
     },
     "/api/v1/media/{file_id}/thumbnail": {
       "get": {
-        "description": "Thumbnail JPEG (sisi terpanjang THUMBNAIL_SIZE px). Dibuat sekali lalu di-cache.",
+        "description": "Thumbnail JPEG (sisi terpanjang THUMBNAIL_SIZE px). Dibuat sekali lalu di-cache.\n\nBila server sedang membuat thumbnail lain terlalu lama, dibalas 503 + `Retry-After`.",
         "operationId": "thumbnail",
         "parameters": [
           {

@@ -29,6 +29,9 @@ from app.services.storage_paths import DIR_MODE, StoragePaths, UnsafePathError
 logger = logging.getLogger("server_penyimpanan.media")
 
 _generation_slot = threading.BoundedSemaphore(1)
+SLOT_WAIT_SECONDS = 2.0
+# Berapa lama request thumbnail boleh mengantre (di event loop, tanpa thread) sebelum 503.
+QUEUE_WAIT_SECONDS = 20.0
 _failed_lock = threading.Lock()
 _failed_thumbnails: set[str] = set()
 _failed_probes: set[str] = set()
@@ -77,8 +80,7 @@ def _run_tool(settings: Settings, args: list[str]) -> subprocess.CompletedProces
         return subprocess.run(
             args,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=settings.MEDIA_TOOL_TIMEOUT_SECONDS,
             preexec_fn=_lower_priority,
             check=False,
@@ -130,7 +132,7 @@ def _pillow_thumbnail(src: Path, dest: Path, settings: Settings) -> str:
         return _REJECTED
     except Image.UnidentifiedImageError:
         return _UNSUPPORTED  # mis. HEIC tanpa plugin: coba ffmpeg
-    except Exception as exc:  # file rusak
+    except Exception as exc:  # noqa: BLE001 - file rusak bisa memicu error jenis apa pun di Pillow
         logger.info("Pillow tidak bisa membuat thumbnail: %s", exc.__class__.__name__)
         return _REJECTED
 
@@ -151,17 +153,34 @@ def _ffmpeg_thumbnail(src: Path, dest: Path, settings: Settings, seek: float | N
     return bool(result and result.returncode == 0 and dest.is_file() and dest.stat().st_size > 0)
 
 
+def _busy() -> AppError:
+    return AppError(503, "thumbnail_busy", "Server sedang membuat thumbnail lain, coba lagi", {"Retry-After": "5"})
+
+
+def thumbnail_supported(settings: Settings, row: StoredFile) -> bool:
+    return (
+        settings.THUMBNAIL_ENABLED and row.media_type in THUMBNAIL_MEDIA and row.mime_type != "image/svg+xml"
+    )
+
+
+def cached_thumbnail(storage: StoragePaths, row: StoredFile) -> Path | None:
+    """Thumbnail yang sudah ada di disk (tanpa membuat baru)."""
+    if not row.thumbnail_path:
+        return None
+    try:
+        cached = storage.resolve(row.thumbnail_path)
+    except UnsafePathError:
+        return None
+    return cached if cached.is_file() else None
+
+
 def get_or_create_thumbnail(db: Session, settings: Settings, storage: StoragePaths, row: StoredFile) -> Path:
     unavailable = AppError(404, "thumbnail_unavailable", "Thumbnail tidak tersedia untuk file ini")
-    if not settings.THUMBNAIL_ENABLED or row.media_type not in THUMBNAIL_MEDIA or row.mime_type == "image/svg+xml":
+    if not thumbnail_supported(settings, row):
         raise unavailable
-    if row.thumbnail_path:
-        try:
-            cached = storage.resolve(row.thumbnail_path)
-            if cached.is_file():
-                return cached
-        except UnsafePathError:
-            pass
+    cached = cached_thumbnail(storage, row)
+    if cached is not None:
+        return cached
     if _has_failed(_failed_thumbnails, row.id):
         raise unavailable
 
@@ -171,8 +190,11 @@ def get_or_create_thumbnail(db: Session, settings: Settings, storage: StoragePat
     dest.parent.mkdir(parents=True, exist_ok=True, mode=DIR_MODE)
     temp = dest.with_name(dest.name + ".tmp")
 
-    if not _generation_slot.acquire(timeout=60):
-        raise AppError(503, "thumbnail_busy", "Server sedang membuat thumbnail lain, coba lagi", {"Retry-After": "5"})
+    # Jangan menunggu lama di sini: fungsi ini berjalan di thread pool (terbatas), jadi menunggu
+    # slot berarti menahan thread yang dibutuhkan endpoint lain. Antrean utama ada di endpoint
+    # (semaphore asyncio, tidak memakai thread); ini hanya pengaman untuk pemanggil lain.
+    if not _generation_slot.acquire(timeout=SLOT_WAIT_SECONDS):
+        raise _busy()
     try:
         if row.media_type == MediaType.IMAGE.value:
             result = _pillow_thumbnail(src, temp, settings)

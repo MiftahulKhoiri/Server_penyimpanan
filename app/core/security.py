@@ -6,7 +6,7 @@ import hashlib
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
@@ -73,7 +73,7 @@ class SecurityService:
         now: datetime | None = None,
         expires_delta: timedelta | None = None,
     ) -> AccessToken:
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         delta = expires_delta or timedelta(minutes=self._settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         payload: dict[str, Any] = {
             "sub": str(user_id),

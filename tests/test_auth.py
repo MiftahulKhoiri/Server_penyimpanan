@@ -8,7 +8,13 @@ from sqlalchemy import select, update
 from app.core.security import SecurityService
 from app.database.types import utcnow
 from app.models import ActivityLog, RefreshToken, User
-from tests.conftest import DEFAULT_PASSWORD, TEST_SECRET, auth_header, create_user_direct, login
+from tests.conftest import (
+    DEFAULT_PASSWORD,
+    TEST_SECRET,
+    auth_header,
+    create_user_direct,
+    login,
+)
 
 API = "/api/v1/auth"
 
