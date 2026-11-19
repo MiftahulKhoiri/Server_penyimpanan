@@ -82,6 +82,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        # Gangguan layanan artifact GitHub tidak boleh menggagalkan rilis APK.
+        continue-on-error: true
         with:
           name: android-build
           path: |
@@ -90,7 +92,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Terbitkan ke GitHub Release (android-latest)
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
