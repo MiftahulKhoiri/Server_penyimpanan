@@ -47,17 +47,26 @@ Mode ini memakai compileSdk 34. APK untuk dipasang sebaiknya tetap dari GitHub A
 ## Penandatanganan APK
 APK rilis **wajib** ditandatangani kunci rilis sendiri. `signing/debug.keystore` hanya untuk build debug: kunci itu publik di repo, jadi APK rilis yang ditandatangani dengannya bisa ditimpa APK palsu buatan siapa pun. Build rilis (`assembleRelease`) dan workflow CI sengaja **gagal** bila kunci rilis tidak ada.
 
-Sekali saja, buat kunci rilis (simpan file & password-nya baik-baik; kalau hilang, update APK tidak bisa dipasang menimpa versi lama):
+Kunci rilis (alias `penyimpanan`, RSA 4096) disimpan **terenkripsi** di `signing/release.jks.enc` (AES-256-CBC, PBKDF2 600.000 iterasi). CI hanya butuh **satu** secret GitHub:
+
+| Secret (Settings → Secrets and variables → Actions) | Isi |
+|---|---|
+| `ANDROID_KEYSTORE_PASSWORD` | Password 32 karakter, sama untuk enkripsi file, keystore, dan kunci |
+
+Salinan asli kunci & password ada di Raspberry Pi 5: `~/.android-keys/penyimpanan-release.jks` dan `~/.android-keys/penyimpanan-release.pass` (mode 600). **Simpan cadangannya di tempat lain** (mis. pengelola password): bila kunci atau password hilang, update APK tidak bisa lagi dipasang menimpa versi lama.
+
+Setelah secret diisi, setiap push ke `main` yang mengubah `android/` atau `app/` menghasilkan APK baru di rilis **android-latest**; cukup unduh dan pasang menimpa versi lama (data & login tetap). APK lama yang ditandatangani kunci debug harus di-**uninstall** sekali sebelum memasang APK pertama dengan kunci rilis.
+
+Build rilis lokal:
 ```bash
-keytool -genkeypair -v -keystore penyimpanan-release.jks -alias penyimpanan \
-  -keyalg RSA -keysize 4096 -validity 10000
-base64 -w0 penyimpanan-release.jks   # isi untuk secret ANDROID_KEYSTORE_BASE64
+export ANDROID_KEYSTORE_PASSWORD="$(cat ~/.android-keys/penyimpanan-release.pass)"
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in signing/release.jks.enc \
+  -out /tmp/release.jks -pass env:ANDROID_KEYSTORE_PASSWORD
+ANDROID_KEYSTORE_PATH=/tmp/release.jks ANDROID_KEY_ALIAS=penyimpanan \
+  ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD" ./gradlew assembleRelease
+rm -f /tmp/release.jks
 ```
-Lalu di GitHub: *Settings → Secrets and variables → Actions*, isi `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`penyimpanan`), `ANDROID_KEY_PASSWORD`.
-
-APK lama yang ditandatangani kunci debug harus di-**uninstall** sekali sebelum memasang APK dengan kunci baru (login ulang sesudahnya).
-
-Build rilis lokal: set `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Khusus uji coba yang tidak dibagikan, boleh `./gradlew assembleRelease -Ppenyimpanan.allowDebugSigning`.
+Khusus uji coba yang tidak dibagikan, boleh `./gradlew assembleRelease -Ppenyimpanan.allowDebugSigning`.
 
 ## Catatan keamanan
 - Koneksi HTTP biasa (tanpa TLS) diizinkan karena server dipakai di jaringan rumah / Tailscale. Jangan buka port server langsung ke internet tanpa HTTPS.

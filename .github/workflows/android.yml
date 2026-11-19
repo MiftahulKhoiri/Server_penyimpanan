@@ -60,18 +60,18 @@ jobs:
       - name: Build APK release
         env:
           # WAJIB: APK rilis hanya ditandatangani kunci rilis sendiri (lihat android/README.md).
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          # Kunci tersimpan terenkripsi di signing/release.jks.enc; secret ini membukanya.
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] \
-             || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
-            echo "::error::Secrets ANDROID_KEYSTORE_* belum diisi; APK rilis tidak dibuat (lihat android/README.md)."
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Secret ANDROID_KEYSTORE_PASSWORD belum diisi; APK rilis tidak dibuat (lihat android/README.md)."
             exit 1
           fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in signing/release.jks.enc \
+            -out "$RUNNER_TEMP/release.jks" -pass env:ANDROID_KEYSTORE_PASSWORD \
+            || { echo "::error::Gagal membuka kunci rilis: secret ANDROID_KEYSTORE_PASSWORD salah?"; exit 1; }
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ANDROID_KEY_ALIAS=penyimpanan
+          export ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
           ./gradlew assembleRelease --console=plain
           rm -f "$RUNNER_TEMP/release.jks"
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Penyimpanan.apk"
